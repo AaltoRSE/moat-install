@@ -1,0 +1,49 @@
+{
+  "providers": [
+    {
+      "name": "llm-gateway",
+      "display_name": "Example LLM Gateway",
+      "base_url": "https://llm-gateway.example.org/api/v1",
+      "api_key_env": "LLM_GATEWAY_KEY",
+      "auth": "bearer",
+      "default_model": "example-org/model-a",
+      "models": [
+        {
+          "id": "example-org/model-a",
+          "display_name": "Model A",
+          "context_window": 1048576,
+          "max_output_tokens": 65536
+        },
+        {
+          "id": "example-org/model-b",
+          "display_name": "Model B",
+          "context_window": 131072,
+          "max_output_tokens": 8192
+        }
+      ],
+      "pi_api": "openai-completions",
+      "opencode_npm": "@ai-sdk/openai-compatible",
+      "codex_disable_response_storage": false
+    },
+    {
+      "name": "azure",
+      "display_name": "Example Azure OpenAI",
+      "base_url": "https://example-apim.azure-api.net/v1/openai",
+      "api_key_env": "AZURE_APIM_KEY",
+      "auth": "header",
+      "auth_header": "Ocp-Apim-Subscription-Key",
+      "default_model": "gpt-5-2025-08-07",
+      "models": [
+        {
+          "id": "gpt-5-2025-08-07",
+          "display_name": "GPT-5 (Azure)",
+          "context_window": 131072,
+          "max_output_tokens": 8192
+        }
+      ],
+      "pi_api": "openai-responses",
+      "opencode_npm": "@ai-sdk/openai",
+      "codex_disable_response_storage": true
+    }
+  ]
+}

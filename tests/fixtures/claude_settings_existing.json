@@ -1,0 +1,8 @@
+{
+  "theme": "dark",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://old.example.com",
+    "ANTHROPIC_AUTH_TOKEN": "stale-token-should-be-removed",
+    "OTHER_VAR": "keep-me"
+  }
+}

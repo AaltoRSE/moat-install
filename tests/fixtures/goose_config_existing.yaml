@@ -1,0 +1,15 @@
+# goose config — my settings
+GOOSE_MODE: "approve"
+GOOSE_PROVIDER: anthropic
+
+providers:
+  anthropic:
+    enabled: true
+    model: claude-sonnet-4-5
+    configured: true
+
+extensions:
+  developer:
+    enabled: true
+    name: developer
+    type: builtin

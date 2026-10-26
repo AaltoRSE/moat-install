@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# PyInstaller build artifacts (the spec file is generated; builds use CLI flags)
+*.spec
+
+# Tooling
+.pytest_cache/
+.ruff_cache/
+.pre-commit-cache/
+
+# detect-secrets: stray baseline backups/copies must never be scanned or
+# committed (only the exact ``.secrets.baseline`` itself belongs in git).
+.secrets.baseline.*
+
+# Editor / ctags
+tags
+tags.temp
+tags.lock
+
+# Runtime secrets never belong in git
+*.bak-*
+env.sh

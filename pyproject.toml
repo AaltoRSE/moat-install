@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "moat-install"
+version = "0.1.0"
+description = "Configure agentic coding harnesses to use LLM providers defined in a provider specification file."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Aalto SciComp" }]
+dependencies = ["tomlkit>=0.11", "ruamel.yaml>=0.17"]
+
+[project.scripts]
+moat-install = "moat_install.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.4", "pyinstaller>=6"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["moat_install"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+# UP rules that require Python >= 3.10 semantics stay off for 3.9 support.
+ignore = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.pyright]
+include = ["moat_install", "tests"]
+venvPath = "."
+venv = ".venv"
+pythonVersion = "3.9"

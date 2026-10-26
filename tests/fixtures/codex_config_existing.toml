@@ -1,0 +1,15 @@
+# User's hand-edited codex config — comments and unrelated settings must survive.
+model = "my-local-model"
+model_provider = "ollama"
+
+# Read-only by default for safety on shared HPC.
+approval_policy = "untrusted"
+
+[projects."/some/project"]
+trust_level = "trusted"
+
+[model_providers.ollama]
+name = "Local Ollama"
+base_url = "http://localhost:11434/v"
+env_key = "OLLAMA_KEY"
+wire_api = "chat"

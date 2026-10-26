@@ -1,0 +1,7 @@
+# My aider preferences
+model: gpt-4o
+openai-api-base: https://api.openai.com/v1
+
+# Editing behaviour
+auto-commits: false
+dark-mode: true

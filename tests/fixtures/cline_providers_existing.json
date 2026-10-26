@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "lastUsedProvider": "openai-compatible",
+  "providers": {
+    "openai-compatible": {
+      "settings": {
+        "provider": "openai-compatible",
+        "baseUrl": "https://api.example.com/v1",
+        "model": "my-model"
+      },
+      "updatedAt": "2025-01-01T00:00:00.000Z",
+      "tokenSource": "manual"
+    }
+  }
+}
