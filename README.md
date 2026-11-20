@@ -175,7 +175,7 @@ The specification file is not bundled — pass it at runtime.
 ## Development
 
 ```sh
-uv venv .venv && uv pip install -e .[dev]
+uv venv .venv && uv pip install -e . --group dev
 .venv/bin/pytest                # tests (no network; HTTP is mocked)
 pre-commit run --all-files      # ruff + pyright
 ```

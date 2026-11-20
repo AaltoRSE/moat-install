@@ -15,7 +15,7 @@ dependencies = ["tomlkit>=0.11", "ruamel.yaml>=0.17"]
 [project.scripts]
 moat-install = "moat_install.cli:main"
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = ["pytest>=7", "ruff>=0.4", "pyinstaller>=6"]
 
 [tool.hatch.build.targets.wheel]

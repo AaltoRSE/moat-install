@@ -30,7 +30,7 @@ jobs:
           python-version: '3.13'
 
       - name: Install requirements
-        run: python -m pip install .
+        run: python -m pip install . --group dev
 
       - name: Build executable
         run: pyinstaller --onefile --name moat-install moat_install/__main__.py

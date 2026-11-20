@@ -229,7 +229,7 @@ reported as manual-action notes (§7).
 ├── README.md               # user-facing docs
 ├── LICENSE                 # MIT
 ├── examples/               # tracked example provider specification files (generic placeholders) + README
-├── pyproject.toml          # packaging: metadata, deps, dev extra, [project.scripts]; ruff/pytest/pyright config
+├── pyproject.toml          # packaging: metadata, deps, dev group (PEP 735), [project.scripts]; ruff/pytest/pyright config
 ├── .pre-commit-config.yaml
 ├── .secrets.baseline       # detect-secrets baseline used by the pre-commit hook (tracked)
 ├── .gitignore
@@ -431,8 +431,9 @@ The project is a proper installable package so end users can install it with
   PATH. Verify the packaging during development with `uv tool install .` (or
   `pipx install .` / `pip install -e .` in a dev venv) followed by
   `moat-install --help`.
-- Development dependencies live in the `dev` extra (`pytest`, `ruff`,
-  `pyinstaller`): `pip install -e .[dev]` (or `uv pip install -e .[dev]`).
+- Development dependencies live in the `dev` dependency group (PEP 735;
+  `pytest`, `ruff`, `pyinstaller`): `pip install -e . --group dev` (or
+  `uv pip install -e . --group dev`).
 - Distribution for machines without pip/pipx: freeze a single-file executable
   with PyInstaller (`pyinstaller --onefile --name moat-install
   moat_install/__main__.py`; build on the target platform). The generated
