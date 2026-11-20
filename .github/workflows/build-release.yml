@@ -45,7 +45,7 @@ jobs:
       - name: Release
         uses: softprops/action-gh-release@v3
         with:
-          working-directory: dist
+          working_directory: dist
           files: |
             moat-install
             *_checksums.txt
