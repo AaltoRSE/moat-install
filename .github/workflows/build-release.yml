@@ -1,0 +1,51 @@
+name: Build release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+# Set MOAT_VERSION environment variable
+env:
+  MOAT_VERSION: ${{ github.ref_name }}
+
+jobs:
+  build:
+    name: Build release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+
+      - name: Install requirements
+        run: python -m pip install .
+
+      - name: Build executable
+        run: pyinstaller --onefile --name moat-install moat_install/__main__.py
+
+      - name: Extract tag
+        run: echo "TAG={value}" >> $GITHUB_OUTPUT
+
+      - name: Calculate checksum
+        run: sha256sum moat-install > moat-install_${GITHUB_REF#refs/tags/v}_checksums.txt
+        working-directory: dist
+
+      - name: Release
+        uses: softprops/action-gh-release@v3
+        with:
+          working-directory: dist
+          files: |
+            moat-install
+            *_checksums.txt
