@@ -107,6 +107,43 @@ def test_azure_default_sets_disable_response_storage(
     assert doc["disable_response_storage"] is True
 
 
+def test_sandbox_mode_container_vs_host(home_base: Path, selections) -> None:
+    """Container mode (default) grants full access *within* the container
+    (moat provides containment); host mode (--init-home-dir) never relaxes
+    the sandbox and strips a previously written grant."""
+    # Container mode (default): sandbox_mode set on create.
+    CodexAdapter(home_base, selections).run()
+    doc = tomlkit.loads((home_base / ".codex/config.toml").read_text("utf-8"))
+    assert doc["sandbox_mode"] == "danger-full-access"
+
+    # User-set value is preserved, never overwritten.
+    config_path = home_base / ".codex/config.toml"
+    config_path.write_text('sandbox_mode = "read-only"\n', encoding="utf-8")
+    report = CodexAdapter(home_base, selections).run()
+    assert report.ok
+    doc = tomlkit.loads(config_path.read_text("utf-8"))
+    assert doc["sandbox_mode"] == "read-only"
+    assert not report.warnings
+
+    # Host mode: never set.
+    fresh = home_base.parent / "host-home"
+    fresh.mkdir()
+    report = CodexAdapter(fresh, selections, container_mode=False).run()
+    assert report.ok and not report.warnings
+    doc = tomlkit.loads((fresh / ".codex/config.toml").read_text("utf-8"))
+    assert "sandbox_mode" not in doc
+
+    # Host mode: a previously written danger-full-access grant is removed.
+    (fresh / ".codex/config.toml").write_text(
+        'sandbox_mode = "danger-full-access"\n', encoding="utf-8"
+    )
+    report = CodexAdapter(fresh, selections, container_mode=False).run()
+    assert report.ok
+    assert report.warnings  # stripped with a warning, not silently
+    doc = tomlkit.loads((fresh / ".codex/config.toml").read_text("utf-8"))
+    assert "sandbox_mode" not in doc
+
+
 def test_idempotent_second_run(home_base: Path, selections) -> None:
     CodexAdapter(home_base, selections).run()
     snap_cfg = (home_base / ".codex/config.toml").read_bytes()

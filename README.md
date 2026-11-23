@@ -198,5 +198,10 @@ pre-commit run --all-files      # ruff + pyright
   a passing check implies in-container reachability.
 - Codex configs are created with `approval_policy = "on-request"`; existing
   safety settings are never overwritten.
+- Codex is granted `sandbox_mode = "danger-full-access"` only when the home
+  base is a container home (default): moat provides containment, so full
+  access *within* the container is safe. With `--init-home-dir` (real host
+  home) the grant is never written, and a previously written value is
+  removed with a warning.
 - Files containing plaintext secrets (the env file always; claude's and
   cline's configs in literal-key mode) are written with mode 0600.

@@ -52,6 +52,10 @@ def build_adapters(
     home_base: Path,
     selections: List[ProviderSelection],
     dry_run: bool = False,
+    container_mode: bool = True,
 ) -> List[Adapter]:
     """Instantiate the selected adapters in registry (sorted) order."""
-    return [ADAPTERS[name](home_base, selections, dry_run=dry_run) for name in names]
+    return [
+        ADAPTERS[name](home_base, selections, dry_run=dry_run, container_mode=container_mode)
+        for name in names
+    ]

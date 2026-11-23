@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import tomlkit
 
 import moat_install.cli as cli
 from moat_install.cli import run
@@ -316,6 +317,10 @@ def test_full_run_creates_everything(keys_env, home_base, mock_validate, capsys)
     for path in expected:
         assert path.exists(), f"missing {path}"
 
+    # codex gets full access within the container: moat is the sandbox
+    codex_doc = tomlkit.loads((home_base / ".codex/config.toml").read_text("utf-8"))
+    assert codex_doc["sandbox_mode"] == "danger-full-access"
+
     # env file has exactly both keys plus derived aliases
     env_text = (home_base / ".config/moat-install/env.sh").read_text("utf-8")
     assert f"export LLM_GATEWAY_KEY={KEY_GATEWAY}" in env_text
@@ -358,6 +363,20 @@ def test_rerun_is_in_place_no_new_backups(keys_env, home_base, mock_validate, ca
     out = capsys.readouterr().out
     assert "no-change" in out
     assert len(list(home_base.rglob("*.bak-*"))) == first_backup_count == 0
+
+
+def test_init_home_dir_no_codex_sandbox_grant(
+    keys_env, tmp_path, monkeypatch, mock_validate, capsys
+) -> None:
+    """--init-home-dir: the real (monkeypatched) $HOME is configured — codex
+    must not be granted danger-full-access there (no container isolation)."""
+    host_home = tmp_path / "hosthome"
+    monkeypatch.setenv("HOME", str(host_home))
+    rc = run(["--init-home-dir", *ALL_HARNESSES])
+    assert rc == 0
+    capsys.readouterr()
+    doc = tomlkit.loads((host_home / ".codex/config.toml").read_text("utf-8"))
+    assert "sandbox_mode" not in doc
 
 
 # ----------------------------------------------------------------------

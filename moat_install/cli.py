@@ -555,7 +555,15 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
         print("skipping endpoint validation (--no-verify)")
 
     # Configure harnesses via the registry (zero harness-specific branches).
-    adapters = build_adapters(harness_names, home_base, selections, dry_run=args.dry_run)
+    # Container mode unless --init-home-dir: the moat runner mounts the home
+    # base at the container's home path, so the container is the sandbox.
+    adapters = build_adapters(
+        harness_names,
+        home_base,
+        selections,
+        dry_run=args.dry_run,
+        container_mode=not args.init_home_dir,
+    )
     reports = []
     for adapter in adapters:
         logger.debug("running adapter: %s", adapter.name)

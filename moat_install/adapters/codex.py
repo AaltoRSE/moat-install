@@ -14,6 +14,12 @@ legacy reference configs):
 * Conservative defaults on creation: ``approval_policy = "on-request"``
   (read-only-ish on shared HPC). Existing values of
   unrelated settings (and of approval_policy itself) are preserved.
+* Sandbox mode: with a container home base (the default — the moat runner
+  mounts the home base at the container's home path) the container itself is
+  the sandbox, so ``sandbox_mode = "danger-full-access"`` is set when absent
+  to give Codex full access *within* the container. In host mode
+  (``--init-home-dir``, real home, no containment layer) the key is not
+  written, and a ``danger-full-access`` value is removed with a warning.
 * When the default provider's specification sets
   ``codex_disable_response_storage``, the top-level ``disable_response_storage``
   is set to ``true`` if absent (some gateways reject stored responses).
@@ -69,6 +75,23 @@ class CodexAdapter(_base.Adapter):
             ):
                 doc["disable_response_storage"] = True
 
+            # Sandbox mode: in container mode (default) moat provides the
+            # containment, so Codex may have full access within the container.
+            # In host mode (--init-home-dir) there is no containment layer:
+            # never grant, and strip a previously written grant.
+            if self.container_mode:
+                if "sandbox_mode" not in doc:
+                    doc["sandbox_mode"] = "danger-full-access"
+                    self.dbg("sandbox_mode set to danger-full-access (container mode)")
+            elif doc.get("sandbox_mode") == "danger-full-access":
+                del doc["sandbox_mode"]
+                self.dbg("removed sandbox_mode=danger-full-access (host mode)")
+                report.warnings.append(
+                    'removed sandbox_mode = "danger-full-access" from config.toml: '
+                    "host mode (--init-home-dir) has no container isolation — "
+                    "re-add it manually only if you accept the risk"
+                )
+
             # Default model + provider: first selection in order.
             doc["model"] = default_sel.profile.default_model
             doc["model_provider"] = default_sel.profile.name
@@ -89,10 +112,16 @@ class CodexAdapter(_base.Adapter):
                 self._write_catalog(catalog_path, report)
 
             if created:
-                report.manual_notes.append(
+                note = (
                     "codex config.toml was created with approval_policy = "
                     '"on-request" (conservative default for shared HPC).'
                 )
+                if self.container_mode:
+                    note += (
+                        ' sandbox_mode = "danger-full-access" was set because the '
+                        "home base is a container home: moat provides containment."
+                    )
+                report.manual_notes.append(note)
         except Exception as exc:
             report.error = str(exc)
             report.status = "failed"

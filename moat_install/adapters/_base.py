@@ -1,8 +1,8 @@
 """Adapter contract shared by every harness adapter.
 
 Every adapter implements :class:`Adapter`: it receives the home base, the
-ordered list of selected ``(provider, key)`` pairs, and the dry-run flag, and
-must:
+ordered list of selected ``(provider, key)`` pairs, the dry-run flag, and the
+container mode flag (False when ``--init-home-dir`` was given), and must:
 
 1. Resolve the harness's global config path(s) under the home base.
 2. Load existing files if present (tomlkit for TOML, json for JSON).
@@ -80,12 +80,20 @@ class Adapter(ABC):
         home_base: Path,
         selections: List[ProviderSelection],
         dry_run: bool = False,
+        container_mode: bool = True,
     ) -> None:
         if not selections:
             raise ValueError(f"adapter {self.name!r} requires at least one provider selection")
         self.home_base = home_base
         self.selections = selections
         self.dry_run = dry_run
+        # True (default) when the home base is destined to be a container home:
+        # the moat runner mounts it at the container's home path, so the
+        # container provides sandboxing and adapters may relax host-side
+        # sandbox defaults (codex: ``sandbox_mode = "danger-full-access"``).
+        # False when --init-home-dir was given — the harness runs directly on
+        # the host and no sandbox relaxation may be assumed.
+        self.container_mode = container_mode
         # Per-harness child logger (e.g. ``moat_install.adapters.pi``) so log
         # records identify the harness; all output goes through ``logging``
         # (see ``logging_setup.py``).

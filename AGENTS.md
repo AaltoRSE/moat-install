@@ -80,7 +80,7 @@ moat-install [--provider-specification=PATH] [--provider=NAME[,NAME…]]
 | `--provider-specification PATH` | Path to the JSON provider specification (§5). Wins over the `MOAT_INSTALL_PROVIDERS` environment variable. Missing/invalid file → usage error (exit 1). |
 | `--provider` | Comma-separated subset of the providers defined in the specification. Default: all, in specification order. Order matters (see §5 default-model rule). Unknown name → usage error listing the valid names from the specification. |
 | `--harness` | Comma-separated subset of `aider,claude,cline,codex,goose,oh-my-pi,opencode,pi`. Default: all eight. Validated against the adapter registry. |
-| `--init-home-dir` | Use the user's real `$HOME` as home base — i.e. configure the host home for running harnesses directly on the host instead of inside containers. |
+| `--init-home-dir` | Use the user's real `$HOME` as home base — i.e. configure the host home for running harnesses directly on the host instead of inside containers. Host mode also disables container-mode sandbox relaxation (Codex `sandbox_mode`; §7/§8). |
 | `--home-base PATH` | Explicit home base; wins over `$MOAT_INSTALL_HOME_BASE` and over `--init-home-dir`. |
 | `--no-verify` | Skip the `/models` endpoint validation. Does not skip model discovery (§5): a discovery-mode provider still needs the endpoint for its catalog, falling back to a spec'd `default_model` alone if discovery fails. |
 | `--dry-run` | Perform everything except writes: resolve paths, collect keys, run validation, run every adapter in dry-run mode (they load/merge but write nothing), and print the plan (home base; with `--verbose` also the masked env-file entries and the rc-file plan). Would-create/would-update statuses follow the `--verbose` rules. |
@@ -301,7 +301,7 @@ yourself writing `if harness == "codex"` outside `adapters/`, restructure.
 
 Every adapter subclasses `Adapter` (ABC in `_base.py`) and sets `name`/`label`:
 
-- **Input:** home base path, ordered list of `ProviderSelection(profile, key)`, dry-run flag.
+- **Input:** home base path, ordered list of `ProviderSelection(profile, key)`, dry-run flag, and the container-mode flag (True unless `--init-home-dir` was given — the home base will be a container home and moat provides containment).
 - **Logging:** each adapter logs at DEBUG level through its per-harness child
   logger (`self.log`; `dbg()` is a thin wrapper) — config paths, backups,
   chmods, unchanged/created/updated files, and the aggregate status.
@@ -348,7 +348,7 @@ literal-key mode):
 |---|---|---|---|
 | **pi** | `.pi/agent/models.json` | `providers.<id>` with `baseUrl`, `api`, `apiKey` (`$ENV` interpolation), optional `headers`, `models[]` (agent dir defaults to `~/.pi/agent` — note: *not* `agents`) | env-ref |
 | **oh-my-pi** | `.omp/agent/models.json` | pi fork; identical schema at the omp agent dir | env-ref |
-| **codex** | `.codex/config.toml` + derived `.codex/moat-models.json` | `[model_providers.<id>]` (`wire_api = "responses"` for both profiles), `env_key`/`env_http_headers`; catalog JSON **derived at write time** from the profile models and referenced by bare filename; conservative `approval_policy = "on-request"` only on create; `disable_response_storage = true` when azure is the default and the key is absent | env-ref |
+| **codex** | `.codex/config.toml` + derived `.codex/moat-models.json` | `[model_providers.<id>]` (`wire_api = "responses"` for both profiles), `env_key`/`env_http_headers`; catalog JSON **derived at write time** from the profile models and referenced by bare filename; conservative `approval_policy = "on-request"` only on create; `sandbox_mode = "danger-full-access"` only on create in container mode (moat is the sandbox; never set in host mode, where a previously written value is removed with a warning); `disable_response_storage = true` when azure is the default and the key is absent | env-ref |
 | **opencode** | `.config/opencode/opencode.json` | `provider` (singular) map; `npm` package per API flavour; `options.baseURL` + `apiKey` as `{env:VAR}` (azure: `apiKey: ""` + `options.headers`); per-model `limit` blocks; top-level `model` = `<provider>/<model>` | env-ref |
 | **claude** | `.claude/settings.json` | `env` block; settings env **overrides** process env, so a stale `ANTHROPIC_AUTH_TOKEN` is removed (with warning) when delivering the token via the env file; one active endpoint — only the default provider is written | env-ref (gateway) / **literal** (azure: `ANTHROPIC_CUSTOM_HEADERS`, file chmod 0600) |
 | **aider** | `.aider.conf.yml` | top-level `model: openai/<model-id>` + `openai-api-base` (openai-compatible flow); YAML merged with ruamel round-trip; single endpoint — default provider only | env-ref (`OPENAI_API_KEY` alias); azure default → warning (APIM header not expressible via env) |
@@ -383,7 +383,11 @@ literal-key mode):
 - **Safety defaults are semantic content:** preserve user approval/safety
   settings (e.g. Codex `approval_policy`) on merge; when creating files from
   scratch, mirror the conservative values (Codex `approval_policy =
-  "on-request"` — read-only-ish on shared HPC).
+  "on-request"` — read-only-ish on shared HPC). The Codex
+  `sandbox_mode = "danger-full-access"` grant is container-mode only: without
+  `--init-home-dir` moat provides containment, so it is set when absent;
+  `--init-home-dir` (host mode) never sets it and removes a previously
+  written value with a warning.
 - **Dry-run output** must enumerate: home base and per-harness
   would-create/would-update statuses; the masked env-file entries (including
   `<derived>` aliases) and the rc-file plan appear only when `--verbose` is
