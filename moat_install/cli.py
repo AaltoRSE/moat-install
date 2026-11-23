@@ -83,7 +83,7 @@ _BANNER = r"""
    codex, aider, goose, opencode, cline, oh-my-pi) so that they
    work with LLM providers.
 
-   It has been designed to work with moat, which containerizes
+   It has been designed to work with moat, that containerizes
    the agents. If you want to configure agents in your own home
    directory, run this tool with "--init-home-dir".
 
