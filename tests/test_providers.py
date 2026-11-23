@@ -11,6 +11,7 @@ from moat_install.providers import (
     AUTH_BEARER,
     AUTH_HEADER,
     SPEC_ENV_VAR,
+    ModelInfo,
     ProviderProfile,
     SpecificationError,
     load_provider_specification,
@@ -203,12 +204,79 @@ def test_optional_fields_have_defaults(tmp_path: Path, registry) -> None:
 
 
 def test_provider_profile_direct_validation() -> None:
+    catalog = (ModelInfo(id="m1", display_name="M1", context_window=1, max_output_tokens=1),)
     with pytest.raises(ValueError):
         ProviderProfile(
             name="x",
             base_url="https://x",
             api_key_env="X",
             auth=AUTH_BEARER,
-            models=(),
+            models=catalog,
             default_model="missing",
         )
+
+
+def test_models_omitted_is_discovery_mode(tmp_path: Path) -> None:
+    """A provider without 'models' loads fine and is marked for discovery."""
+    spec = {
+        "providers": [
+            {
+                "name": "gw",
+                "base_url": "https://gw.example/api/v1",
+                "api_key_env": ENV_GATEWAY,
+                "auth": AUTH_BEARER,
+            }
+        ]
+    }
+    registry = load_provider_specification(write_spec(tmp_path / "p.json", spec))
+    profile = registry.get("gw")
+    assert profile.needs_discovery
+    assert profile.models == ()
+    assert profile.default_model == ""  # first discovered model becomes default
+    assert profile.display_name == "gw"
+
+
+def test_discovery_mode_with_default_model(tmp_path: Path) -> None:
+    """In discovery mode 'default_model' is optional; when given it is kept
+    (membership in the discovered catalog is checked at discovery time)."""
+    spec = {
+        "providers": [
+            {
+                "name": "gw",
+                "base_url": "https://gw.example/api/v1",
+                "api_key_env": ENV_GATEWAY,
+                "auth": AUTH_BEARER,
+                "default_model": "some-model",
+            }
+        ]
+    }
+    registry = load_provider_specification(write_spec(tmp_path / "p.json", spec))
+    profile = registry.get("gw")
+    assert profile.needs_discovery
+    assert profile.default_model == "some-model"
+
+
+def test_models_present_requires_default_model(tmp_path: Path) -> None:
+    """An explicit catalog still requires 'default_model' (strict typo guard)."""
+    spec = copy.deepcopy(TEST_SPEC)
+    del spec["providers"][0]["default_model"]
+    with pytest.raises(SpecificationError, match=r"default_model.*required"):
+        load_provider_specification(write_spec(tmp_path / "p.json", spec))
+
+
+def test_empty_models_rejected_with_discovery_hint(tmp_path: Path) -> None:
+    """'models': [] is a likely typo — rejected, with a pointer at discovery
+    mode (omit the key) as the remedy."""
+    spec = copy.deepcopy(TEST_SPEC)
+    spec["providers"][0]["models"] = []
+    with pytest.raises(SpecificationError, match="omit the 'models' key"):
+        load_provider_specification(write_spec(tmp_path / "p.json", spec))
+
+
+def test_bad_default_model_type_in_discovery_mode(tmp_path: Path) -> None:
+    spec = copy.deepcopy(TEST_SPEC)
+    del spec["providers"][0]["models"]
+    del spec["providers"][0]["default_model"]
+    spec["providers"][0]["default_model"] = 123
+    with pytest.raises(SpecificationError, match="default_model"):
+        load_provider_specification(write_spec(tmp_path / "p.json", spec))

@@ -13,8 +13,9 @@ import contextlib
 import getpass
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Set, Tuple
 
 from .adapters import ADAPTERS, ProviderSelection, adapter_names, build_adapters
 from .home import (
@@ -26,10 +27,11 @@ from .home import (
     update_rc_file,
     write_env_file,
 )
-from .httpcheck import check_provider
+from .httpcheck import check_provider, discover_models
 from .logging_setup import get_logger, setup_logging
 from .providers import (
     SPEC_ENV_VAR,
+    ModelInfo,
     ProviderProfile,
     SpecificationError,
     load_provider_specification,
@@ -311,6 +313,76 @@ def resolve_specification_path(specification_flag: Optional[str]) -> Optional[Pa
     return None
 
 
+def discover_selection_models(
+    selections: List[ProviderSelection],
+    no_verify: bool,
+) -> Tuple[List[ProviderSelection], Set[str], List[str]]:
+    """Discover model catalogs for providers whose specification omits ``models``.
+
+    For each such provider, ``GET {base_url}/models`` is queried with the
+    provider key and the response becomes the profile's model catalog; the
+    first discovered model is the default unless the specification named a
+    ``default_model`` (which must then be offered by the endpoint). A
+    successful discovery also proves the endpoint works with the key, so the
+    caller can skip the separate validation call for that provider (one
+    ``/models`` call per provider, never two).
+
+    With ``--no-verify`` and a specification-provided ``default_model``, a
+    failed discovery falls back to configuring exactly that one model (with
+    unknown metadata) instead of failing the run.
+
+    Returns ``(selections, discovery_validated, failures)``: the possibly
+    rebuilt selection list, the names of providers whose ``/models`` call
+    already succeeded (validation can be skipped for them), and human-readable
+    failure details for providers that could not be resolved.
+    """
+    resolved: List[ProviderSelection] = []
+    discovery_validated: Set[str] = set()
+    failures: List[str] = []
+    for sel in selections:
+        profile = sel.profile
+        if not profile.needs_discovery:
+            resolved.append(sel)
+            continue
+        logger.debug(
+            "discovering models for provider '%s' via GET %s/models",
+            profile.name,
+            profile.base_url,
+        )
+        ok, detail, models, default_model = discover_models(profile, sel.key)
+        if ok:
+            print(f"discover: {detail}")
+            discovery_validated.add(profile.name)
+            resolved.append(
+                ProviderSelection(
+                    profile=replace(profile, models=models, default_model=default_model),
+                    key=sel.key,
+                )
+            )
+            continue
+        if no_verify and profile.default_model:
+            # Escape hatch: the endpoint is unreachable from here, but the
+            # specification names the model to use — configure exactly that
+            # one model (metadata unknown, hence omitted by the adapters).
+            fallback = ModelInfo(
+                id=profile.default_model,
+                display_name=profile.default_model,
+                context_window=0,
+                max_output_tokens=0,
+            )
+            print(
+                f"warning: model discovery failed for provider '{profile.name}' ({detail}); "
+                f"configuring only the specification's default_model "
+                f"'{profile.default_model}' with unknown metadata (--no-verify)"
+            )
+            resolved.append(
+                ProviderSelection(profile=replace(profile, models=(fallback,)), key=sel.key)
+            )
+            continue
+        failures.append(detail)
+    return resolved, discovery_validated, failures
+
+
 def run(argv: Optional[Sequence[str]] = None) -> int:
     """Run moat-install; returns the process exit code."""
     _print_banner()
@@ -429,11 +501,40 @@ def run(argv: Optional[Sequence[str]] = None) -> int:
                     )
             print(f"  {rc}: {action}")
 
+    # Providers whose specification omits the model catalog get it discovered
+    # from the /models endpoint now, after the keys are known (see §5/§8 of
+    # AGENTS.md). This must happen before the adapters run. A failed discovery
+    # aborts the run (exit 3) — without a model catalog there is nothing to
+    # configure — except the --no-verify escape hatch with a spec'd default.
+    selections, discovered_validated, discovery_failures = discover_selection_models(
+        selections, no_verify=args.no_verify
+    )
+    if discovery_failures:
+        for failure in discovery_failures:
+            print(f"error: {failure}", file=sys.stderr)
+        print(
+            "error: model discovery failed; refusing to write configs (a provider "
+            "without a model catalog cannot be configured — check the endpoint/key, "
+            "give the provider an explicit 'models' list in the specification, or "
+            "set its 'default_model' and use --no-verify to configure just that model)",
+            file=sys.stderr,
+        )
+        return EXIT_VALIDATION
+    sel_pairs = [(s.profile, s.key) for s in selections]  # resolved catalogs
+
     # Validate each selected provider once (host-side; containers inherit
-    # host networking).
+    # host networking). Providers whose catalog was just discovered skip the
+    # second /models call — discovery already validated them.
     if not args.no_verify:
         all_ok = True
         for sel in selections:
+            if sel.profile.name in discovered_validated:
+                logger.debug(
+                    "provider '%s': /models already fetched during discovery; "
+                    "skipping re-validation",
+                    sel.profile.name,
+                )
+                continue
             logger.debug(
                 "validating provider '%s' via GET %s/models",
                 sel.profile.name,

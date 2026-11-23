@@ -10,7 +10,8 @@ from email.message import Message
 
 import pytest
 
-from moat_install.httpcheck import auth_headers, check_provider
+from moat_install.httpcheck import auth_headers, check_provider, discover_models
+from moat_install.providers import AUTH_BEARER, ProviderProfile
 
 SECRET = secrets.token_hex(24)
 
@@ -129,3 +130,161 @@ def test_non_list_json_scalar_fails(monkeypatch: pytest.MonkeyPatch, registry) -
     )
     assert not ok
     assert "not a JSON object or array" in detail
+
+
+# ----------------------------------------------------------------------
+# Model discovery (providers whose specification omits 'models')
+# ----------------------------------------------------------------------
+
+
+def _discovery_profile() -> ProviderProfile:
+    """A discovery-mode profile: no catalog, no default model."""
+    return ProviderProfile(
+        name="gw",
+        base_url="https://gw.example/api/v1",
+        api_key_env="GW_KEY",
+        auth=AUTH_BEARER,
+    )
+
+
+def test_discover_models_parses_data_envelope(monkeypatch: pytest.MonkeyPatch) -> None:
+    body = json.dumps(
+        {
+            "data": [
+                {"id": "m1", "display_name": "Model One"},
+                {"id": "m2"},
+            ]
+        }
+    )
+    ok, detail, models, default = discover_models(
+        _discovery_profile(), SECRET, urlopen_fn=lambda req, timeout=None: FakeResponse(body)
+    )
+    assert ok
+    assert "2 model(s) discovered" in detail
+    assert SECRET not in detail
+    assert [m.id for m in models] == ["m1", "m2"]
+    assert models[0].display_name == "Model One"
+    assert models[1].display_name == "m2"  # falls back to the id
+    assert default == "m1"  # first discovered model is the default
+
+
+def test_discover_models_parses_limit_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Context/output limits are picked up under their alternative spellings;
+    absent metadata becomes 0 (unknown)."""
+    body = json.dumps(
+        {
+            "data": [
+                {"id": "m1", "context_length": 4096, "max_output_tokens": 1024},
+                {"id": "m2"},
+            ]
+        }
+    )
+    ok, _detail, models, _default = discover_models(
+        _discovery_profile(), SECRET, urlopen_fn=lambda req, timeout=None: FakeResponse(body)
+    )
+    assert ok
+    assert models[0].context_window == 4096
+    assert models[0].max_output_tokens == 1024
+    assert models[1].context_window == 0  # unknown
+    assert models[1].max_output_tokens == 0  # unknown
+
+
+def test_discover_models_deduplicates_and_skips_unusable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = json.dumps(
+        {
+            "data": [
+                {"id": "m1"},
+                {"id": "m1"},  # duplicate
+                {"no_id_here": True},  # unusable
+                "not-a-dict",  # unusable
+            ]
+        }
+    )
+    ok, _detail, models, _default = discover_models(
+        _discovery_profile(), SECRET, urlopen_fn=lambda req, timeout=None: FakeResponse(body)
+    )
+    assert ok
+    assert [m.id for m in models] == ["m1"]
+
+
+def test_discover_models_without_usable_entries_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    ok, detail, models, default = discover_models(
+        _discovery_profile(),
+        SECRET,
+        urlopen_fn=lambda req, timeout=None: FakeResponse('{"data": [42]}'),
+    )
+    assert not ok
+    assert "no usable model entries" in detail
+    assert models == ()
+    assert default == ""
+
+
+def test_discover_models_specified_default_must_be_offered(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    profile = ProviderProfile(
+        name="gw",
+        base_url="https://gw.example/api/v1",
+        api_key_env="GW_KEY",
+        auth=AUTH_BEARER,
+        default_model="m2",
+    )
+    body = json.dumps({"data": [{"id": "m1"}, {"id": "m3"}]})
+    ok, detail, models, default = discover_models(
+        profile, SECRET, urlopen_fn=lambda req, timeout=None: FakeResponse(body)
+    )
+    assert not ok
+    assert "default_model 'm2' is not offered" in detail
+    assert "m1" in detail and "m3" in detail  # available models listed
+    assert models == ()
+    assert default == ""
+
+
+def test_discover_models_specified_default_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    profile = ProviderProfile(
+        name="gw",
+        base_url="https://gw.example/api/v1",
+        api_key_env="GW_KEY",
+        auth=AUTH_BEARER,
+        default_model="m2",
+    )
+    body = json.dumps({"data": [{"id": "m1"}, {"id": "m2"}]})
+    ok, _detail, _models, default = discover_models(
+        profile, SECRET, urlopen_fn=lambda req, timeout=None: FakeResponse(body)
+    )
+    assert ok
+    assert default == "m2"
+
+
+def test_discover_models_http_error_is_reported_and_masked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_urlopen(request, timeout=None):
+        raise urllib.error.HTTPError(
+            request.full_url,
+            401,
+            "Unauthorized",
+            hdrs=Message(),
+            fp=io.BytesIO(b'{"detail":"Invalid API Key"}'),
+        )
+
+    ok, detail, models, _default = discover_models(
+        _discovery_profile(), SECRET, urlopen_fn=fake_urlopen
+    )
+    assert not ok
+    assert "401" in detail
+    assert SECRET not in detail
+    assert models == ()
+
+
+def test_discover_models_bare_array(monkeypatch: pytest.MonkeyPatch) -> None:
+    ok, _detail, models, default = discover_models(
+        _discovery_profile(),
+        SECRET,
+        urlopen_fn=lambda req, timeout=None: FakeResponse('[{"id": "m1"}]'),
+    )
+    assert ok
+    assert [m.id for m in models] == ["m1"]
+    assert default == "m1"

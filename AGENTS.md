@@ -82,7 +82,7 @@ moat-install [--provider-specification=PATH] [--provider=NAME[,NAME…]]
 | `--harness` | Comma-separated subset of `aider,claude,cline,codex,goose,oh-my-pi,opencode,pi`. Default: all eight. Validated against the adapter registry. |
 | `--init-home-dir` | Use the user's real `$HOME` as home base — i.e. configure the host home for running harnesses directly on the host instead of inside containers. |
 | `--home-base PATH` | Explicit home base; wins over `$MOAT_INSTALL_HOME_BASE` and over `--init-home-dir`. |
-| `--no-verify` | Skip the `/models` endpoint validation. |
+| `--no-verify` | Skip the `/models` endpoint validation. Does not skip model discovery (§5): a discovery-mode provider still needs the endpoint for its catalog, falling back to a spec'd `default_model` alone if discovery fails. |
 | `--dry-run` | Perform everything except writes: resolve paths, collect keys, run validation, run every adapter in dry-run mode (they load/merge but write nothing), and print the plan (home base; with `--verbose` also the masked env-file entries and the rc-file plan). Would-create/would-update statuses follow the `--verbose` rules. |
 | `--verbose` | Print the full summary table (per harness × provider statuses, files, key mode, backups, parse check), warnings, manual-action notes, and the resolution plan (masked env-file entries, rc-file plan). Default output is the brief summary (§11). |
 | `--debug` | Verbose trace of every decision: path resolution, merge steps, HTTP calls, file creation, backups, rc-file edits. Emitted through Python `logging` at DEBUG level on the `moat_install` logger (see §11 Logging); **all secrets must be masked** in debug output. |
@@ -161,12 +161,32 @@ JSON **provider specification file**, located via (in order of precedence,
 `load_provider_specification(path)` parses and strictly validates the file and
 returns a `ProviderRegistry` (`profiles` dict + `order` tuple). Validation is
 strict so spec typos fail loudly: unknown keys (top level, provider, model)
-are rejected; required fields must be present; `default_model` must be in
-`models`; `auth_header` is required for `auth: "header"`; names must match
+are rejected; required fields must be present; when an explicit `models`
+list is given, `default_model` must be present and a member of it;
+`auth_header` is required for `auth: "header"`; names must match
 `^[a-z0-9][a-z0-9_-]*$` (they become TOML/JSON/YAML keys in harness configs);
 duplicate names and empty model lists are rejected. All problems raise
 `SpecificationError` with a message identifying the file and the offending
 key (surfaced as exit code 1).
+
+**Discovery mode:** a provider may omit `models` (and `default_model`) — its
+catalog is then not known at load time (`ProviderProfile.needs_discovery`).
+After the keys are collected, `moat-install` queries `GET {base_url}/models`
+with the key (`httpcheck.discover_models`) and builds the catalog from the
+response: model ids from `id` (fallbacks `model`/`name`), `display_name` when
+offered, and context/output limits under their common spellings
+(`context_window`, `context_length`, `max_model_len`, `max_output_tokens`,
+`max_completion_tokens`, …). Metadata the gateway does not provide is
+**unknown**, represented as `0`; adapters omit unknown metadata instead of
+writing zeroes (pi `contextWindow`/`maxTokens`, opencode `limit`, codex
+`context_window`/`truncation_policy` — pre-existing values are preserved).
+The default model is the spec's `default_model` when given (it must be
+offered by the endpoint, else discovery fails) or the first discovered model.
+A successful discovery also proves the endpoint works with the key, so the
+separate validation call (§8) is skipped for that provider — one `/models`
+call per provider, never two. If discovery fails: error, exit code 3 —
+except with `--no-verify` **and** a spec'd `default_model`, in which case a
+single-model catalog (metadata unknown) is configured with a warning.
 
 Schema (all fields shown; optional ones noted):
 
@@ -193,11 +213,13 @@ Schema (all fields shown; optional ones noted):
 ```
 
 - Required provider fields: `name`, `base_url`, `api_key_env`, `auth`
-  (`bearer` or `header`), `models`, `default_model`. Optional:
-  `display_name` (defaults to `name`), `auth_header` (required for `header`
-  auth), `pi_api` (default `openai-completions`), `opencode_npm` (default
-  `@ai-sdk/openai-compatible`), `codex_disable_response_storage` (default
-  `false`).
+  (`bearer` or `header`). Optional: `display_name` (defaults to `name`),
+  `auth_header` (required for `header` auth), `pi_api` (default
+  `openai-completions`), `opencode_npm` (default `@ai-sdk/openai-compatible`),
+  `codex_disable_response_storage` (default `false`), `models` +
+  `default_model` (explicit catalog; both required together — omitting
+  `models` switches the provider to discovery mode, see above; an explicit
+  empty `models: []` is rejected as a likely typo).
 - Required model fields: `id`, `display_name`, `context_window`,
   `max_output_tokens` (positive integers).
 - The order of the `providers` array is the default selection order; the
@@ -210,8 +232,9 @@ Schema (all fields shown; optional ones noted):
   `load_provider_specification` validation. Real (deployment-specific)
   specifications live outside the repository.
 
-No runtime `/models` discovery for catalog building; the catalog comes from
-the specification.
+Catalogs come either from the specification (explicit `models`) or, in
+discovery mode, from a runtime `GET {base_url}/models` query (see above) —
+never from any other source.
 
 **Default-model rule when both providers are configured into one harness:** the
 provider listed first in `--provider` (or the default order when omitted) is the
@@ -239,7 +262,7 @@ reported as manual-action notes (§7).
 │   ├── __main__.py         # thin delegator to cli.main() → python -m moat_install
 │   ├── providers.py        # §5 spec-file loading/validation + profile dataclasses
 │   ├── home.py             # home-base resolution, managed env file (incl. aliases), rc source lines, mask_key
-│   ├── httpcheck.py        # /models validation (stdlib urllib; no requests)
+│   ├── httpcheck.py        # /models validation + model discovery (stdlib urllib; no requests)
 │   ├── logging_setup.py    # logging standard: package logger, setup_logging(), get_logger()
 │   ├── reporting.py        # final summary table (statuses/files/key mode)
 │   ├── merge.py            # generic deep_merge + JSON/TOML load-serialize helpers
@@ -348,6 +371,11 @@ literal-key mode):
   *Known caveat:* the Azure APIM returns 404 for unknown/invalid-key requests
   (it hides routes), so `GET /v1/openai/models` may fail even with a valid key;
   the 404 error message explains this and points at `--no-verify`.
+  *Discovery-mode providers* (§5) fetch their catalog from the same endpoint
+  after key collection and before validation; a successful discovery counts
+  as validation and no second call is made. A failed discovery aborts with
+  exit code 3 regardless of `--no-verify`, unless a spec'd `default_model`
+  allows the single-model fallback (see §5).
 - **Idempotency:** running twice with the same inputs must not duplicate
   providers, models, rc source lines, env-file header lines, or backups.
   Unchanged files are detected by content comparison and not rewritten; the

@@ -361,6 +361,130 @@ def test_rerun_is_in_place_no_new_backups(keys_env, home_base, mock_validate, ca
 
 
 # ----------------------------------------------------------------------
+# Model discovery (providers whose specification omits 'models')
+# ----------------------------------------------------------------------
+
+
+@pytest.fixture
+def discovery_spec_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Point $MOAT_INSTALL_PROVIDERS at a catalog-less (discovery) spec."""
+    from tests.conftest import DISCOVERY_SPEC
+
+    path = write_spec(tmp_path / "providers-discovery.json", DISCOVERY_SPEC)
+    monkeypatch.setenv("MOAT_INSTALL_PROVIDERS", str(path))
+    return path
+
+
+def test_discovery_configures_discovered_models(
+    keys_env, discovery_spec_env, home_base, mock_discover, mock_validate, capsys
+) -> None:
+    """A catalog-less provider gets its models discovered from /models; the
+    first discovered model becomes the default, and the discovered endpoint
+    is not validated a second time (one /models call per provider)."""
+    rc = run(["--home-base", str(home_base), "--harness", "pi,codex"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "discover: discovery-gw: 2 model(s) discovered via /models" in out
+    assert "(default: discovered-model-1)" in out
+    assert mock_discover[0] == [("discovery-gw", KEY_GATEWAY)]
+    assert mock_validate[0] == []  # discovery replaced the validation call
+
+    doc = (home_base / ".pi/agent/models.json").read_text("utf-8")
+    parsed = json.loads(doc)
+    provider = parsed["providers"]["discovery-gw"]
+    assert [m["id"] for m in provider["models"]] == [
+        "discovered-model-1",
+        "discovered-model-2",
+    ]
+    model1 = next(m for m in provider["models"] if m["id"] == "discovered-model-1")
+    assert model1["contextWindow"] == 8192  # known metadata is written
+    model2 = next(m for m in provider["models"] if m["id"] == "discovered-model-2")
+    assert "contextWindow" not in model2  # unknown metadata is omitted
+    assert "maxTokens" not in model2
+
+    # codex: catalog derived from the discovered models; default from the first
+    catalog = json.loads((home_base / ".codex/moat-models.json").read_text("utf-8"))
+    assert [m["slug"] for m in catalog["models"]] == [
+        "discovered-model-1",
+        "discovered-model-2",
+    ]
+    config_toml = (home_base / ".codex/config.toml").read_text("utf-8")
+    assert 'model = "discovered-model-1"' in config_toml
+
+    env_text = (home_base / ".config/moat-install/env.sh").read_text("utf-8")
+    assert f"export LLM_GATEWAY_KEY={KEY_GATEWAY}" in env_text
+
+
+def test_discovery_failure_exits_3(
+    keys_env, discovery_spec_env, home_base, mock_discover, capsys
+) -> None:
+    """A failed discovery aborts the run (exit 3) before anything is written."""
+    _calls, outcomes = mock_discover
+    outcomes.append((False, "discovery-gw: /models returned HTTP 500", (), ""))
+    rc = run(["--home-base", str(home_base), "--harness", "pi"])
+    assert rc == 3
+    assert not (home_base / ".pi").exists()
+    assert not (home_base / ".config/moat-install/env.sh").exists()
+
+
+def test_discovery_failure_no_verify_falls_back_to_default_model(
+    keys_env, discovery_spec_env, home_base, mock_discover, monkeypatch, capsys
+) -> None:
+    """--no-verify + a spec'd default_model: a failed discovery falls back to
+    configuring exactly that model (metadata unknown, hence omitted)."""
+    from tests.conftest import DISCOVERY_SPEC
+
+    spec = json.loads(json.dumps(DISCOVERY_SPEC))
+    spec["providers"][0]["default_model"] = "known-good-model"
+    monkeypatch.setenv("MOAT_INSTALL_PROVIDERS", str(write_spec(discovery_spec_env, spec)))
+    _calls, outcomes = mock_discover
+    outcomes.append((False, "discovery-gw: /models returned HTTP 500", (), ""))
+    rc = run(["--home-base", str(home_base), "--harness", "pi", "--no-verify"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "warning: model discovery failed" in out
+    assert "known-good-model" in out
+    doc = (home_base / ".pi/agent/models.json").read_text("utf-8")
+    parsed = json.loads(doc)
+    assert [m["id"] for m in parsed["providers"]["discovery-gw"]["models"]] == ["known-good-model"]
+
+
+def test_discovery_failure_no_verify_without_default_exits_3(
+    keys_env, discovery_spec_env, home_base, mock_discover, capsys
+) -> None:
+    """--no-verify cannot help when there is neither a reachable /models
+    endpoint nor a spec'd default model: nothing is configurable."""
+    _calls, outcomes = mock_discover
+    outcomes.append((False, "discovery-gw: cannot reach endpoint", (), ""))
+    rc = run(["--home-base", str(home_base), "--harness", "pi", "--no-verify"])
+    assert rc == 3
+    assert not (home_base / ".pi").exists()
+
+
+def test_explicit_catalog_skips_discovery(
+    keys_env, home_base, mock_validate, mock_discover
+) -> None:
+    """Providers with an explicit catalog are never sent through discovery."""
+    rc = run(["--home-base", str(home_base), "--harness", "pi"])
+    assert rc == 0
+    assert mock_discover[0] == []
+    assert sorted(name for name, _ in mock_validate[0]) == ["azure", "llm-gateway"]
+
+
+def test_discovery_rerun_is_idempotent(
+    keys_env, discovery_spec_env, home_base, mock_discover, capsys
+) -> None:
+    """The discovered catalog is deterministic, so a re-run reports
+    no-change everywhere with zero new backups."""
+    run(["--home-base", str(home_base), "--harness", "pi"])
+    rc = run(["--home-base", str(home_base), "--harness", "pi"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "no-change" in out
+    assert len(list(home_base.rglob("*.bak-*"))) == 0
+
+
+# ----------------------------------------------------------------------
 # Output verbosity: brief by default, full details with --verbose
 # ----------------------------------------------------------------------
 

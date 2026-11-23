@@ -136,31 +136,34 @@ class CodexAdapter(_base.Adapter):
         for sel in self.selections:
             profile = sel.profile
             for model in profile.models:
-                models.append(
-                    {
-                        "slug": model.id,
-                        "display_name": model.display_name,
-                        "name": model.display_name,
-                        "model": model.id,
-                        "provider": profile.name,
-                        "context_window": model.context_window,
-                        "truncation_policy": {
-                            "mode": "tokens",
-                            "limit": min(model.context_window, 500_000),
-                        },
-                        "shell_type": "shell_command",
-                        "visibility": "list",
-                        "supported_in_api": True,
-                        "priority": 0,
-                        "base_instructions": "You are a helpful coding assistant.",
-                        "supports_tools": True,
-                        "supports_parallel_tool_calls": False,
-                        "experimental_supported_tools": [],
-                        "supports_reasoning_summaries": True,
-                        "support_verbosity": False,
-                        "supported_reasoning_levels": [],
+                entry: Dict[str, Any] = {
+                    "slug": model.id,
+                    "display_name": model.display_name,
+                    "name": model.display_name,
+                    "model": model.id,
+                    "provider": profile.name,
+                    "shell_type": "shell_command",
+                    "visibility": "list",
+                    "supported_in_api": True,
+                    "priority": 0,
+                    "base_instructions": "You are a helpful coding assistant.",
+                    "supports_tools": True,
+                    "supports_parallel_tool_calls": False,
+                    "experimental_supported_tools": [],
+                    "supports_reasoning_summaries": True,
+                    "support_verbosity": False,
+                    "supported_reasoning_levels": [],
+                }
+                # Discovered catalogs may lack limit metadata (0 = unknown):
+                # omit the fields rather than writing zeroes (a zero
+                # truncation limit would truncate everything).
+                if model.context_window:
+                    entry["context_window"] = model.context_window
+                    entry["truncation_policy"] = {
+                        "mode": "tokens",
+                        "limit": min(model.context_window, 500_000),
                     }
-                )
+                models.append(entry)
         content = self._dump_json({"models": models})
         self._write_text(catalog_path, content, report, parse_check=self._parse_json_check)
 

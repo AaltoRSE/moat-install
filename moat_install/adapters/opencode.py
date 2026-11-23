@@ -115,10 +115,14 @@ class OpencodeAdapter(_base.Adapter):
             if not isinstance(existing, dict):
                 existing = {}
             existing.setdefault("name", model.display_name)
-            existing["limit"] = {
-                "context": model.context_window,
-                "output": model.max_output_tokens,
-            }
+            # Discovered catalogs may lack limit metadata (0 = unknown): omit
+            # the limit block rather than writing zeroes — opencode then
+            # applies its own defaults, and an existing limit stays untouched.
+            if model.context_window and model.max_output_tokens:
+                existing["limit"] = {
+                    "context": model.context_window,
+                    "output": model.max_output_tokens,
+                }
             models[model.id] = existing
         entry["models"] = models
 

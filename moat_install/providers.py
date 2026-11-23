@@ -29,15 +29,21 @@ Specification file format (JSON)::
       ]
     }
 
+A provider may omit ``models`` (and ``default_model``) to run in **discovery
+mode**: the model catalog is then fetched from ``GET {base_url}/models`` with
+the provider key at run time (see ``httpcheck.discover_models``) — the first
+discovered model becomes the default unless ``default_model`` names one that
+the endpoint offers.
+
 The order of the ``providers`` list is the default selection order: the first
 entry becomes each harness's default provider (see the default-model rule in
 AGENTS.md §5). See ``examples/`` for ready-made specification files.
 
 Validation is strict: unknown keys (top level, provider, model) are rejected,
 required fields must be present, and cross-field invariants (default_model in
-models, auth_header for header auth, unique names) are enforced. All errors
-raise :class:`SpecificationError` with a message identifying the offending
-file and key.
+models when a catalog is given, auth_header for header auth, unique names)
+are enforced. All errors raise :class:`SpecificationError` with a message
+identifying the offending file and key.
 """
 
 from __future__ import annotations
@@ -109,6 +115,9 @@ class ProviderProfile:
     * ``auth`` — ``AUTH_BEARER`` or ``AUTH_HEADER``.
     * ``auth_header`` — custom header name when ``auth == AUTH_HEADER``.
     * ``models`` — ordered model catalog; ``default_model`` must be a member.
+      An empty tuple means **discovery mode**: the catalog is fetched from
+      ``GET {base_url}/models`` at run time (see ``needs_discovery`` and
+      ``httpcheck.discover_models``).
     * ``pi_api`` — pi/oh-my-pi ``api`` field for this endpoint.
     * ``opencode_npm`` — opencode ``provider.<id>.npm`` package for this API.
     * ``codex_disable_response_storage`` — top-level Codex setting implied when
@@ -120,8 +129,8 @@ class ProviderProfile:
     base_url: str
     api_key_env: str
     auth: str
-    models: Tuple[ModelInfo, ...]
-    default_model: str
+    models: Tuple[ModelInfo, ...] = ()
+    default_model: str = ""
     auth_header: str = ""
     pi_api: str = "openai-completions"
     opencode_npm: str = "@ai-sdk/openai-compatible"
@@ -130,7 +139,7 @@ class ProviderProfile:
 
     def __post_init__(self) -> None:
         model_ids = {m.id for m in self.models}
-        if self.default_model not in model_ids:
+        if self.models and self.default_model not in model_ids:
             raise ValueError(
                 f"provider {self.name!r}: default_model {self.default_model!r} "
                 f"is not in models {sorted(model_ids)}"
@@ -147,6 +156,16 @@ class ProviderProfile:
             if m.id == model_id:
                 return m
         raise KeyError(f"provider {self.name!r} has no model {model_id!r}")
+
+    @property
+    def needs_discovery(self) -> bool:
+        """True when the specification omitted the catalog.
+
+        The model list must then be discovered from ``GET {base_url}/models``
+        with the provider key before any adapter runs (see
+        ``httpcheck.discover_models`` and the orchestration in ``cli.py``).
+        """
+        return not self.models
 
 
 @dataclass(frozen=True)
@@ -224,11 +243,7 @@ def _parse_provider(path: Path, index: int, raw: Any) -> ProviderProfile:
             f"valid keys: {', '.join(sorted(_PROVIDER_KEYS))}"
         )
 
-    missing = [
-        k
-        for k in ("name", "base_url", "api_key_env", "auth", "models", "default_model")
-        if k not in raw
-    ]
+    missing = [k for k in ("name", "base_url", "api_key_env", "auth") if k not in raw]
     if missing:
         raise SpecificationError(f"{where}: missing required key(s) {', '.join(missing)}")
 
@@ -250,19 +265,36 @@ def _parse_provider(path: Path, index: int, raw: Any) -> ProviderProfile:
     if auth == AUTH_HEADER and (not isinstance(auth_header, str) or not auth_header.strip()):
         raise SpecificationError(f"{where}: 'auth_header' is required when auth is {AUTH_HEADER!r}")
 
-    models_raw = raw["models"]
-    if not isinstance(models_raw, list) or not models_raw:
-        raise SpecificationError(f"{where}: 'models' must be a non-empty JSON array")
-    models = tuple(_parse_model(path, name, i, m) for i, m in enumerate(models_raw))
+    # Model catalog: either an explicit list (with a default_model that must be
+    # a member) or discovery mode — the catalog is fetched from the /models
+    # endpoint at run time, once the provider key is known.
+    if "models" in raw:
+        models_raw = raw["models"]
+        if not isinstance(models_raw, list) or not models_raw:
+            raise SpecificationError(
+                f"{where}: 'models' must be a non-empty JSON array; to have the "
+                f"catalog discovered from GET {raw['base_url'].rstrip('/')}/models "
+                "instead, omit the 'models' key"
+            )
+        models = tuple(_parse_model(path, name, i, m) for i, m in enumerate(models_raw))
 
-    default_model = raw["default_model"]
-    if not isinstance(default_model, str) or not default_model:
-        raise SpecificationError(f"{where}: 'default_model' must be a non-empty string")
-    model_ids = {m.id for m in models}
-    if default_model not in model_ids:
-        raise SpecificationError(
-            f"{where}: 'default_model' {default_model!r} is not in models {sorted(model_ids)}"
-        )
+        if "default_model" not in raw:
+            raise SpecificationError(f"{where}: 'default_model' is required when 'models' is given")
+        default_model = raw["default_model"]
+        if not isinstance(default_model, str) or not default_model:
+            raise SpecificationError(f"{where}: 'default_model' must be a non-empty string")
+        model_ids = {m.id for m in models}
+        if default_model not in model_ids:
+            raise SpecificationError(
+                f"{where}: 'default_model' {default_model!r} is not in models {sorted(model_ids)}"
+            )
+    else:
+        # Discovery mode: 'default_model' is optional — when given it must be
+        # offered by the endpoint (checked at discovery time, not here).
+        models = ()
+        default_model = raw.get("default_model", "")
+        if not isinstance(default_model, str):
+            raise SpecificationError(f"{where}: 'default_model' must be a non-empty string")
 
     for key in ("pi_api", "opencode_npm"):
         if key in raw and (not isinstance(raw[key], str) or not raw[key].strip()):

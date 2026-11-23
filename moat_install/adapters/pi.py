@@ -123,8 +123,13 @@ class PiFamilyAdapter(_base.Adapter):
             target["id"] = model.id
             target.setdefault("name", model.display_name)
             target.setdefault("input", ["text"])
-            target["contextWindow"] = model.context_window
-            target["maxTokens"] = model.max_output_tokens
+            # Discovered catalogs may lack limit metadata (0 = unknown): omit
+            # the fields rather than writing zeroes — pi then applies its own
+            # defaults, and values already present in an existing entry stay.
+            if model.context_window:
+                target["contextWindow"] = model.context_window
+            if model.max_output_tokens:
+                target["maxTokens"] = model.max_output_tokens
             merged.append(target)
         entry["models"] = merged
 

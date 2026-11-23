@@ -50,8 +50,9 @@ order of precedence):
 3. neither set → usage error
 
 Ready-made examples are in [`examples/`](examples/) — start from
-`providers-minimal.json` (one OpenAI-compatible gateway) or `providers.json`
-(two providers using every field). The full schema:
+`providers-minimal.json` (one OpenAI-compatible gateway),
+`providers-discovery.json` (model catalog discovered from the endpoint), or
+`providers.json` (two providers using every field). The full schema:
 
 ```json
 {
@@ -76,11 +77,22 @@ Ready-made examples are in [`examples/`](examples/) — start from
 ```
 
 - Required provider fields: `name`, `base_url`, `api_key_env`, `auth`
-  (`bearer` or `header`), `models`, `default_model`; `auth_header` is
-  required for `header` auth. The remaining fields are optional.
+  (`bearer` or `header`); `auth_header` is required for `header` auth. The
+  remaining fields are optional.
 - Validation is strict: unknown keys, missing fields, bad types, duplicate
-  names, and a `default_model` missing from `models` are usage errors that
-  name the offending key.
+  names, and a `default_model` missing from an explicit `models` list are
+  usage errors that name the offending key.
+- **Discovery mode:** omit `models` (and `default_model`) and moat-install
+  queries `GET {base_url}/models` with the key after the keys are collected,
+  then configures the models the endpoint reports. The first discovered
+  model is the default unless the specification sets `default_model` (which
+  must then be offered by the endpoint). Limit metadata (`context_window`,
+  `max_output_tokens`) is taken from the response when the gateway provides
+  it and treated as unknown otherwise (harnesses keep their own defaults).
+  A failed discovery aborts the run (exit code 3) — unless `--no-verify` is
+  given and the specification names a `default_model`, in which case only
+  that model is configured (with a warning). A successful discovery also
+  validates the endpoint, so no second `/models` call is made.
 - The order of the `providers` array is the default order: the first entry
   becomes each harness's default provider; later entries are still fully
   configured where the harness supports multiple endpoints.

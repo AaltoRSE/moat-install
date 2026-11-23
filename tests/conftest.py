@@ -13,7 +13,11 @@ import pytest
 import moat_install.cli as cli_module
 import moat_install.httpcheck as httpcheck_module
 from moat_install.adapters._base import ProviderSelection
-from moat_install.providers import ProviderRegistry, load_provider_specification
+from moat_install.providers import (
+    ModelInfo,
+    ProviderRegistry,
+    load_provider_specification,
+)
 
 # Randomly generated per test session — no test may depend on a particular
 # key value, and no (fake) key material is ever committed. The ``gw-``/``az-``
@@ -96,6 +100,22 @@ def write_spec(path: Path, spec: dict = TEST_SPEC) -> Path:
     return path
 
 
+#: A provider specification without a model catalog: moat-install must
+#: discover the models from GET {base_url}/models at run time. The key env
+#: var is the gateway one so the ``keys_env`` fixture covers it.
+DISCOVERY_SPEC = {
+    "providers": [
+        {
+            "name": "discovery-gw",
+            "display_name": "Discovery Gateway",
+            "base_url": "https://discovery.example/api/v1",
+            "api_key_env": ENV_GATEWAY,
+            "auth": "bearer",
+        }
+    ]
+}
+
+
 @pytest.fixture(scope="session")
 def registry(tmp_path_factory: pytest.TempPathFactory) -> ProviderRegistry:
     """Session-wide registry parsed from the test specification."""
@@ -165,6 +185,45 @@ def mock_validate(monkeypatch: pytest.MonkeyPatch) -> Iterator[Tuple[list, list]
         return True, f"{profile.name}: /models OK (mocked)"
 
     monkeypatch.setattr(cli_module, "check_provider", fake_check)
+    yield calls, outcomes
+
+
+@pytest.fixture
+def mock_discover(monkeypatch: pytest.MonkeyPatch) -> Iterator[Tuple[list, list]]:
+    """Mock /models model discovery (providers whose spec omits 'models').
+
+    Records (profile-name, key) calls; tests may pre-load outcomes of the
+    ``(ok, detail, models, default_model)`` tuple. Returns the (calls,
+    outcomes) lists for inspection/mutation.
+    """
+    calls: list = []
+    outcomes: list = []
+
+    def fake_discover(profile, key, timeout=httpcheck_module.DEFAULT_TIMEOUT_S, urlopen_fn=None):
+        calls.append((profile.name, key))
+        if outcomes:
+            return outcomes.pop(0)
+        models = (
+            ModelInfo(
+                id="discovered-model-1",
+                display_name="Discovered Model 1",
+                context_window=8192,
+                max_output_tokens=2048,
+            ),
+            ModelInfo(
+                id="discovered-model-2",
+                display_name="Discovered Model 2",
+                context_window=0,
+                max_output_tokens=0,
+            ),
+        )
+        detail = (
+            f"{profile.name}: {len(models)} model(s) discovered via /models "
+            "(default: discovered-model-1)"
+        )
+        return True, detail, models, "discovered-model-1"
+
+    monkeypatch.setattr(cli_module, "discover_models", fake_discover)
     yield calls, outcomes
 
 
