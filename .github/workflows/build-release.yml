@@ -14,9 +14,26 @@ env:
   MOAT_VERSION: ${{ github.ref_name }}
 
 jobs:
+
   build:
-    name: Build release
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        os: [Linux, Darwin]
+        arch: [x86_64, arm64]
+        include:
+          - runner: ubuntu-latest
+            os: Linux
+            arch: x86_64
+          - runner: ubuntu-26.04-arm
+            os: Linux
+            arch: arm64
+          - runner: macos-26-intel
+            os: Darwin
+            arch: x86_64
+          - runner: macos-latest
+            os: Darwin
+            arch: arm64
 
     steps:
       - name: Check out the code
@@ -35,11 +52,44 @@ jobs:
       - name: Build executable
         run: pyinstaller --onefile --name moat-install moat_install/__main__.py
 
-      - name: Extract tag
-        run: echo "TAG={value}" >> $GITHUB_OUTPUT
+      - name: Copy LICENSE and README.md to dist
+        run: cp LICENSE README.md dist/
+
+      - name: Create names for the artifacts
+        run: |
+          echo "MOAT_INSTALL_TAR=moat-install_${{ matrix.os }}_${{ matrix.arch }}.tar.gz" >> $GITHUB_ENV
+          echo "MOAT_INSTALL_ARTIFACT=moat-install_${GITHUB_REF#refs/tags/v}_${{ matrix.os }}_${{ matrix.arch }}" >> $GITHUB_ENV
+
+      - name: Tar up the release
+        working-directory: dist
+        run: tar -c -f ${{ env.MOAT_INSTALL_TAR }} moat-install LICENSE README.md
+
+      - name: Upload built release as an artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.MOAT_ARTIFACT }}
+          path: dist/${{ env.MOAT_INSTALL_TAR }}
+
+  release:
+    name: Build release
+    runs-on: ubuntu-latest
+    needs: [build]
+
+    steps:
+
+      - name: Get tag
+        run: |
+          echo "MOAT_INSTALL_TAG=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: moat-install_${{ env.MOAT_INSTALL_TAG }}_*
+          merge-multiple: true
 
       - name: Calculate checksum
-        run: sha256sum moat-install > moat-install_${GITHUB_REF#refs/tags/v}_checksums.txt
+        run: sha256sum * > moat-install_${GITHUB_REF#refs/tags/v}_checksums.txt
         working-directory: dist
 
       - name: Release
@@ -47,5 +97,5 @@ jobs:
         with:
           working_directory: dist
           files: |
-            moat-install
+            *.tar.gz
             *_checksums.txt
