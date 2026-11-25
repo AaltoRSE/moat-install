@@ -182,7 +182,13 @@ moat-install --help
 For machines where you cannot install Python packages, the tool can be frozen
 into a single executable with PyInstaller (`pyinstaller --onefile --name
 moat-install --hiddenimport certifi --runtime-hook=hooks/pyi_rth_ca_certs.py
-moat_install/__main__.py`; build on the platform you target). The frozen
+moat_install/__main__.py`). Linux binaries must be built against the oldest
+glibc you target: PyInstaller bundles `libpython` from the build interpreter,
+which records the newest glibc symbol versions it references — a binary built
+on a newer host fails on older glibc (`GLIBC_2.35 not found`). The release
+workflow therefore builds Linux binaries inside the `manylinux_2_34`
+containers (glibc 2.34, RHEL 9 floor) using the CPython 3.9 bundled there.
+The frozen
 binary carries its own CA bundle: `certifi` (collected by PyInstaller's
 built-in hook) plus a start-up hook that points OpenSSL at it via
 `SSL_CERT_FILE`, so TLS validation also works on hosts without a system
