@@ -16,7 +16,7 @@ dependencies = ["tomlkit>=0.11", "ruamel.yaml>=0.17"]
 moat-install = "moat_install.cli:main"
 
 [dependency-groups]
-dev = ["pytest>=7", "ruff>=0.4", "pyinstaller>=6"]
+dev = ["pytest>=7", "ruff>=0.4", "pyinstaller>=6", "certifi"]  # certifi: build-time only (frozen-binary CA bundle)
 
 [tool.hatch.build.targets.wheel]
 packages = ["moat_install"]

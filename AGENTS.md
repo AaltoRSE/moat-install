@@ -252,6 +252,8 @@ reported as manual-action notes (§7).
 ├── README.md               # user-facing docs
 ├── LICENSE                 # MIT
 ├── examples/               # tracked example provider specification files (generic placeholders) + README
+├── hooks/                  # PyInstaller hooks for the frozen binary
+│   └── pyi_rth_ca_certs.py # runtime hook: SSL_CERT_FILE -> bundled certifi CA file
 ├── pyproject.toml          # packaging: metadata, deps, dev group (PEP 735), [project.scripts]; ruff/pytest/pyright config
 ├── .pre-commit-config.yaml
 ├── .secrets.baseline       # detect-secrets baseline used by the pre-commit hook (tracked)
@@ -464,14 +466,22 @@ The project is a proper installable package so end users can install it with
   `pipx install .` / `pip install -e .` in a dev venv) followed by
   `moat-install --help`.
 - Development dependencies live in the `dev` dependency group (PEP 735;
-  `pytest`, `ruff`, `pyinstaller`): `pip install -e . --group dev` (or
-  `uv pip install -e . --group dev`).
+  `pytest`, `ruff`, `pyinstaller`, plus `certifi` — build-time only, bundled
+  into the frozen binary for TLS, see the freeze bullet below): `pip install
+  -e . --group dev` (or `uv pip install -e . --group dev`).
 - Distribution for machines without pip/pipx: freeze a single-file executable
   with PyInstaller (`pyinstaller --onefile --name moat-install
-  moat_install/__main__.py`; build on the target platform). The generated
-  `*.spec` file and `build/`/`dist/` outputs are gitignored — always build via
-  CLI flags. The provider specification is not bundled; it is passed at
-  runtime.
+  --hiddenimport certifi --runtime-hook=hooks/pyi_rth_ca_certs.py
+  moat_install/__main__.py`; build on the target platform). The frozen binary
+  carries its own CA bundle: `--hiddenimport certifi` pulls in `certifi`, whose
+  `cacert.pem` is collected by PyInstaller's built-in `hook-certifi`, and the
+  custom runtime hook `hooks/pyi_rth_ca_certs.py` points OpenSSL at it via
+  `SSL_CERT_FILE` at start-up (required because `urllib`'s TLS context only
+  consults OpenSSL's default verify paths, never the frozen archive).
+  `certifi` is a build-time-only dependency; the source package itself keeps
+  stdlib-only HTTP. The generated `*.spec` file and `build/`/`dist/` outputs
+  are gitignored — always build via CLI flags. The provider specification is
+  not bundled; it is passed at runtime.
 - Runtime import guard: declared dependencies are resolved at install time, so
   they are normally guaranteed; keep the startup import check anyway as a
   safety net for source checkouts. If `tomlkit` or `ruamel.yaml` is missing,

@@ -181,8 +181,12 @@ moat-install --help
 
 For machines where you cannot install Python packages, the tool can be frozen
 into a single executable with PyInstaller (`pyinstaller --onefile --name
-moat-install moat_install/__main__.py`); build on the platform you target.
-The specification file is not bundled — pass it at runtime.
+moat-install --hiddenimport certifi --runtime-hook=hooks/pyi_rth_ca_certs.py
+moat_install/__main__.py`; build on the platform you target). The frozen
+binary carries its own CA bundle: `certifi` (collected by PyInstaller's
+built-in hook) plus a start-up hook that points OpenSSL at it via
+`SSL_CERT_FILE`, so TLS validation also works on hosts without a system
+certificate store. The specification file is not bundled — pass it at runtime.
 
 ## Development
 
