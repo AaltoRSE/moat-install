@@ -187,7 +187,10 @@ glibc you target: PyInstaller bundles `libpython` from the build interpreter,
 which records the newest glibc symbol versions it references — a binary built
 on a newer host fails on older glibc (`GLIBC_2.35 not found`). The release
 workflow therefore builds Linux binaries inside the `manylinux_2_34`
-containers (glibc 2.34, RHEL 9 floor) using the CPython 3.9 bundled there.
+containers (glibc 2.34, RHEL 9 floor), compiling its build interpreter there
+via pyenv with `--enable-shared` (PyInstaller requires a shared `libpython`,
+which the CPython builds bundled in the container lack; compiling inside the
+container keeps the glibc guarantee).
 The frozen
 binary carries its own CA bundle: `certifi` (collected by PyInstaller's
 built-in hook) plus a start-up hook that points OpenSSL at it via

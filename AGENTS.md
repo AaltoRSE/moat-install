@@ -478,8 +478,11 @@ The project is a proper installable package so end users can install it with
   so a binary built on a newer host fails on older glibc (`GLIBC_2.35 not
   found`). The release workflow builds Linux binaries inside the
   `quay.io/pypa/manylinux_2_34_{x86_64,aarch64}` containers (glibc 2.34 =
-  RHEL 9 floor) using the CPython 3.9 built inside them
-  (`/opt/python/cp39-cp39`); macOS builds run directly on the runner. The
+  RHEL 9 floor), compiling the build interpreter there with pyenv
+  (`PYTHON_CONFIGURE_OPTS="--enable-shared"` — PyInstaller requires a shared
+  libpython and the CPython builds shipped in the container's `/opt/python`
+  are static-only; compiling inside the container preserves the old-glibc
+  guarantee); macOS builds run directly on the runner. The
   frozen binary
   carries its own CA bundle: `--hiddenimport certifi` pulls in `certifi`, whose
   `cacert.pem` is collected by PyInstaller's built-in `hook-certifi`, and the
