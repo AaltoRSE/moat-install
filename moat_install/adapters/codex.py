@@ -1,6 +1,6 @@
 """Codex adapter — ``<home-base>/.codex/config.toml`` plus a derived model catalog.
 
-Config mechanism (verified against the installed codex-cli 0.163.0 and the
+Config mechanism (verified against the installed codex-cli 0.167.0 and the
 legacy reference configs):
 
 * ``~/.codex/config.toml`` declares providers under ``[model_providers.<id>]``
@@ -11,6 +11,10 @@ legacy reference configs):
   live next to ``config.toml``. We derive it at write time from the selected
   providers' model lists (never shipped as a static file) and reference it by
   bare filename — the path rule forbids serializing host-side absolute paths.
+  Every catalog entry requires ``truncation_policy`` (codex-cli 0.167.0 fails
+  to parse the catalog without it), so it is written even when the model's
+  context window is unknown; ``context_window`` itself stays optional and is
+  omitted when unknown.
 * Conservative defaults on creation: ``approval_policy = "on-request"``
   (read-only-ish on shared HPC). Existing values of
   unrelated settings (and of approval_policy itself) are preserved.
@@ -183,15 +187,17 @@ class CodexAdapter(_base.Adapter):
                     "support_verbosity": False,
                     "supported_reasoning_levels": [],
                 }
-                # Discovered catalogs may lack limit metadata (0 = unknown):
-                # omit the fields rather than writing zeroes (a zero
-                # truncation limit would truncate everything).
+                # ``truncation_policy`` is required by codex-cli (verified
+                # against 0.167.0): an entry without it fails to parse. The
+                # limit caps at 500k; for a model with unknown context window
+                # (discovered metadata 0) the same cap is the fallback — a
+                # zero limit would truncate everything.
                 if model.context_window:
                     entry["context_window"] = model.context_window
-                    entry["truncation_policy"] = {
-                        "mode": "tokens",
-                        "limit": min(model.context_window, 500_000),
-                    }
+                entry["truncation_policy"] = {
+                    "mode": "tokens",
+                    "limit": min(model.context_window, 500_000) or 500_000,
+                }
                 models.append(entry)
         content = self._dump_json({"models": models})
         self._write_text(catalog_path, content, report, parse_check=self._parse_json_check)

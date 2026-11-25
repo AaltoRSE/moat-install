@@ -179,7 +179,11 @@ offered, and context/output limits under their common spellings
 `max_completion_tokens`, …). Metadata the gateway does not provide is
 **unknown**, represented as `0`; adapters omit unknown metadata instead of
 writing zeroes (pi `contextWindow`/`maxTokens`, opencode `limit`, codex
-`context_window`/`truncation_policy` — pre-existing values are preserved).
+`context_window` — pre-existing values are preserved). Codex is the
+exception for `truncation_policy`: codex-cli (verified against 0.167.0)
+requires it on every catalog entry and fails to parse the catalog
+otherwise, so it is always written — limit `min(context_window, 500_000)`
+when known, `500_000` when unknown (never a zero limit).
 The default model is the spec's `default_model` when given (it must be
 offered by the endpoint, else discovery fails) or the first discovered model.
 A successful discovery also proves the endpoint works with the key, so the

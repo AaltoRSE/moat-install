@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import tomlkit
 
 from moat_install.adapters._base import ProviderSelection
 from moat_install.adapters.codex import CodexAdapter
-from moat_install.providers import ProviderRegistry
+from moat_install.providers import ModelInfo, ProviderRegistry
 from tests.conftest import (
     KEY_AZURE,
     KEY_GATEWAY,
@@ -60,6 +61,32 @@ def test_catalog_is_derived_from_profiles(home_base: Path, selections, registry)
     assert model_a["supports_tools"] is True
     gpt5 = by_slug["gpt-5-2025-08-07"]
     assert gpt5["provider"] == "azure"
+
+
+def test_catalog_requires_truncation_policy_without_context_window(
+    home_base: Path, registry: ProviderRegistry
+) -> None:
+    """codex-cli (verified against 0.167.0) requires truncation_policy on every
+    catalog entry: a model with unknown context window (discovered metadata 0)
+    must still get one, with the 500k fallback limit."""
+    profile = replace(
+        registry.get("llm-gateway"),
+        models=(
+            ModelInfo(
+                id="example-org/model-a",
+                display_name="No Metadata",
+                context_window=0,
+                max_output_tokens=0,
+            ),
+        ),
+    )
+    report = CodexAdapter(home_base, [ProviderSelection(profile, KEY_GATEWAY)]).run()
+    assert report.ok
+    catalog = json.loads((home_base / ".codex/moat-models.json").read_text("utf-8"))
+    (model,) = catalog["models"]
+    # context_window stays omitted when unknown (never a zero)
+    assert "context_window" not in model
+    assert model["truncation_policy"] == {"mode": "tokens", "limit": 500_000}
 
 
 def test_merge_preserves_comments_and_unrelated_settings(
