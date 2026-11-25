@@ -482,7 +482,9 @@ The project is a proper installable package so end users can install it with
   (`PYTHON_CONFIGURE_OPTS="--enable-shared"` — PyInstaller requires a shared
   libpython and the CPython builds shipped in the container's `/opt/python`
   are static-only; compiling inside the container preserves the old-glibc
-  guarantee); macOS builds run directly on the runner. The
+  guarantee; the container lacks CPython's build libraries, so the workflow
+  installs the matching `-devel` packages via `yum` first); macOS builds run
+  directly on the runner. The
   frozen binary
   carries its own CA bundle: `--hiddenimport certifi` pulls in `certifi`, whose
   `cacert.pem` is collected by PyInstaller's built-in `hook-certifi`, and the

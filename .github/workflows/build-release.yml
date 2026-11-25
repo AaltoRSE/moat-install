@@ -47,6 +47,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Install CPython build dependencies
+        run: |
+          yum install -y \
+            zlib-devel bzip2-devel xz-devel sqlite-devel readline-devel \
+            ncurses-devel libffi-devel openssl-devel gdbm-devel tk-devel
+
       - name: Install pyenv and build a shared-library Python
         env:
           PY_VERSION: '3.15.2'
