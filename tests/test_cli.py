@@ -317,9 +317,11 @@ def test_full_run_creates_everything(keys_env, home_base, mock_validate, capsys)
     for path in expected:
         assert path.exists(), f"missing {path}"
 
-    # codex gets full access within the container: moat is the sandbox
+    # codex gets full access within the container: moat is the sandbox;
+    # its daemon must not auto-start inside the container
     codex_doc = tomlkit.loads((home_base / ".codex/config.toml").read_text("utf-8"))
     assert codex_doc["sandbox_mode"] == "danger-full-access"
+    assert codex_doc["features"]["daemon_auto_start"] is False
 
     # env file has exactly both keys plus derived aliases
     env_text = (home_base / ".config/moat-install/env.sh").read_text("utf-8")
@@ -377,6 +379,8 @@ def test_init_home_dir_no_codex_sandbox_grant(
     capsys.readouterr()
     doc = tomlkit.loads((host_home / ".codex/config.toml").read_text("utf-8"))
     assert "sandbox_mode" not in doc
+    # daemon_auto_start is container-mode only: never set (nor stripped) here
+    assert "features" not in doc
 
 
 # ----------------------------------------------------------------------

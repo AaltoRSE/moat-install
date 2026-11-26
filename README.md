@@ -216,5 +216,9 @@ pre-commit run --all-files      # ruff + pyright
   access *within* the container is safe. With `--init-home-dir` (real host
   home) the grant is never written, and a previously written value is
   removed with a warning.
+- Codex's daemon is disabled in container homes: `[features]
+  daemon_auto_start = false` is written when absent so the app-server daemon
+  does not auto-start inside the container. With `--init-home-dir` the
+  setting is left untouched.
 - Files containing plaintext secrets (the env file always; claude's and
   cline's configs in literal-key mode) are written with mode 0600.

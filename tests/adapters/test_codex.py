@@ -171,6 +171,33 @@ def test_sandbox_mode_container_vs_host(home_base: Path, selections) -> None:
     assert "sandbox_mode" not in doc
 
 
+def test_daemon_auto_start_container_vs_host(home_base: Path, selections) -> None:
+    """Container mode disables codex's daemon auto-start ([features]
+    daemon_auto_start = false, verified against codex-cli 0.167.0) unless the
+    user set it; host mode leaves the setting untouched entirely."""
+    # Container mode (default): set on create.
+    CodexAdapter(home_base, selections).run()
+    doc = tomlkit.loads((home_base / ".codex/config.toml").read_text("utf-8"))
+    assert doc["features"]["daemon_auto_start"] is False
+
+    # User-set value is preserved, never overwritten.
+    config_path = home_base / ".codex/config.toml"
+    config_path.write_text("[features]\ndaemon_auto_start = true\n", encoding="utf-8")
+    report = CodexAdapter(home_base, selections).run()
+    assert report.ok
+    doc = tomlkit.loads(config_path.read_text("utf-8"))
+    assert doc["features"]["daemon_auto_start"] is True
+    assert not report.warnings
+
+    # Host mode: never set (a restriction, not a grant — nothing to strip).
+    fresh = home_base.parent / "host-home-daemon"
+    fresh.mkdir()
+    report = CodexAdapter(fresh, selections, container_mode=False).run()
+    assert report.ok and not report.warnings
+    doc = tomlkit.loads((fresh / ".codex/config.toml").read_text("utf-8"))
+    assert "features" not in doc
+
+
 def test_idempotent_second_run(home_base: Path, selections) -> None:
     CodexAdapter(home_base, selections).run()
     snap_cfg = (home_base / ".codex/config.toml").read_bytes()

@@ -24,6 +24,12 @@ legacy reference configs):
   to give Codex full access *within* the container. In host mode
   (``--init-home-dir``, real home, no containment layer) the key is not
   written, and a ``danger-full-access`` value is removed with a warning.
+* Daemon mode: with a container home base, ``[features]
+  daemon_auto_start = false`` is set when absent so the app-server daemon
+  does not auto-start inside the container (verified as a stable feature
+  flag against codex-cli 0.167.0, ``codex features list``; a user-set value
+  is preserved). In host mode the setting is left untouched either way — it
+  is a restriction, not a grant, so there is nothing to strip there.
 * When the default provider's specification sets
   ``codex_disable_response_storage``, the top-level ``disable_response_storage``
   is set to ``true`` if absent (some gateways reject stored responses).
@@ -96,6 +102,16 @@ class CodexAdapter(_base.Adapter):
                     "re-add it manually only if you accept the risk"
                 )
 
+            # Daemon mode: in container mode the app-server daemon must not
+            # auto-start inside the container home. In host mode the setting
+            # is left untouched (it is a restriction, not a grant — nothing
+            # to strip there).
+            if self.container_mode:
+                features = self._ensure_table(doc, "features")
+                if "daemon_auto_start" not in features:
+                    features["daemon_auto_start"] = False
+                    self.dbg("features.daemon_auto_start set to false (container mode)")
+
             # Default model + provider: first selection in order.
             doc["model"] = default_sel.profile.default_model
             doc["model_provider"] = default_sel.profile.name
@@ -123,7 +139,9 @@ class CodexAdapter(_base.Adapter):
                 if self.container_mode:
                     note += (
                         ' sandbox_mode = "danger-full-access" was set because the '
-                        "home base is a container home: moat provides containment."
+                        "home base is a container home: moat provides containment; "
+                        "[features] daemon_auto_start = false disables the codex "
+                        "daemon inside the container."
                     )
                 report.manual_notes.append(note)
         except Exception as exc:

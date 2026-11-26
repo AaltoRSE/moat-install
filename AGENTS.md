@@ -354,7 +354,7 @@ literal-key mode):
 |---|---|---|---|
 | **pi** | `.pi/agent/models.json` | `providers.<id>` with `baseUrl`, `api`, `apiKey` (`$ENV` interpolation), optional `headers`, `models[]` (agent dir defaults to `~/.pi/agent` — note: *not* `agents`) | env-ref |
 | **oh-my-pi** | `.omp/agent/models.json` | pi fork; identical schema at the omp agent dir | env-ref |
-| **codex** | `.codex/config.toml` + derived `.codex/moat-models.json` | `[model_providers.<id>]` (`wire_api = "responses"` for both profiles), `env_key`/`env_http_headers`; catalog JSON **derived at write time** from the profile models and referenced by bare filename; conservative `approval_policy = "on-request"` only on create; `sandbox_mode = "danger-full-access"` only on create in container mode (moat is the sandbox; never set in host mode, where a previously written value is removed with a warning); `disable_response_storage = true` when azure is the default and the key is absent | env-ref |
+| **codex** | `.codex/config.toml` + derived `.codex/moat-models.json` | `[model_providers.<id>]` (`wire_api = "responses"` for both profiles), `env_key`/`env_http_headers`; catalog JSON **derived at write time** from the profile models and referenced by bare filename; conservative `approval_policy = "on-request"` only on create; `sandbox_mode = "danger-full-access"` only on create in container mode (moat is the sandbox; never set in host mode, where a previously written value is removed with a warning); `[features] daemon_auto_start = false` only when absent in container mode (no daemon auto-start inside the container; never set, never removed in host mode); `disable_response_storage = true` when azure is the default and the key is absent | env-ref |
 | **opencode** | `.config/opencode/opencode.json` | `provider` (singular) map; `npm` package per API flavour; `options.baseURL` + `apiKey` as `{env:VAR}` (azure: `apiKey: ""` + `options.headers`); per-model `limit` blocks; top-level `model` = `<provider>/<model>` | env-ref |
 | **claude** | `.claude/settings.json` | `env` block; settings env **overrides** process env, so a stale `ANTHROPIC_AUTH_TOKEN` is removed (with warning) when delivering the token via the env file; one active endpoint — only the default provider is written | env-ref (gateway) / **literal** (azure: `ANTHROPIC_CUSTOM_HEADERS`, file chmod 0600) |
 | **aider** | `.aider.conf.yml` | top-level `model: openai/<model-id>` + `openai-api-base` (openai-compatible flow); YAML merged with ruamel round-trip; single endpoint — default provider only | env-ref (`OPENAI_API_KEY` alias); azure default → warning (APIM header not expressible via env) |
@@ -393,7 +393,10 @@ literal-key mode):
   `sandbox_mode = "danger-full-access"` grant is container-mode only: without
   `--init-home-dir` moat provides containment, so it is set when absent;
   `--init-home-dir` (host mode) never sets it and removes a previously
-  written value with a warning.
+  written value with a warning. Codex's `[features] daemon_auto_start =
+  false` likewise applies only in container mode (the daemon must not
+  auto-start inside the container; set when absent, user value preserved);
+  host mode leaves it untouched — it is a restriction, not a grant.
 - **Dry-run output** must enumerate: home base and per-harness
   would-create/would-update statuses; the masked env-file entries (including
   `<derived>` aliases) and the rc-file plan appear only when `--verbose` is
