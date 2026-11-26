@@ -11,12 +11,14 @@ from __future__ import annotations
 import argparse
 import contextlib
 import getpass
+import importlib.metadata
 import os
 import sys
 from dataclasses import replace
 from pathlib import Path
 from typing import Callable, List, Optional, Sequence, Set, Tuple
 
+from . import __version__
 from .adapters import ADAPTERS, ProviderSelection, adapter_names, build_adapters
 from .home import (
     EnvFileReport,
@@ -129,6 +131,19 @@ def _check_dependencies() -> Optional[str]:
 # ----------------------------------------------------------------------
 
 
+def _version_string() -> str:
+    """Return the project version for ``--version``.
+
+    Prefers the installed distribution's metadata (authoritative for pipx/uv/pip
+    installs); falls back to ``moat_install.__version__`` when the distribution
+    metadata is unavailable (source checkout without install, frozen binary).
+    """
+    try:
+        return importlib.metadata.version("moat-install")
+    except importlib.metadata.PackageNotFoundError:
+        return __version__
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="moat-install",
@@ -201,6 +216,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--debug",
         action="store_true",
         help="verbose trace of every decision (all secrets masked)",
+    )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {_version_string()}",
+        help="print the version string and exit",
     )
     return parser
 

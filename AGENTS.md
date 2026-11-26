@@ -72,7 +72,7 @@ All CLI code (argument parsing, orchestration, exit codes) lives in
 ```
 moat-install [--provider-specification=PATH] [--provider=NAME[,NAME…]]
              [--harness=NAME[,NAME…]] [--init-home-dir] [--home-base=PATH]
-             [--no-verify] [--dry-run] [--verbose] [--debug] [--help]
+             [--no-verify] [--dry-run] [--verbose] [--debug] [--version] [--help]
 ```
 
 | Flag | Semantics |
@@ -86,6 +86,7 @@ moat-install [--provider-specification=PATH] [--provider=NAME[,NAME…]]
 | `--dry-run` | Perform everything except writes: resolve paths, collect keys, run validation, run every adapter in dry-run mode (they load/merge but write nothing), and print the plan (home base; with `--verbose` also the masked env-file entries and the rc-file plan). Would-create/would-update statuses follow the `--verbose` rules. |
 | `--verbose` | Print the full summary table (per harness × provider statuses, files, key mode, backups, parse check), warnings, manual-action notes, and the resolution plan (masked env-file entries, rc-file plan). Default output is the brief summary (§11). |
 | `--debug` | Verbose trace of every decision: path resolution, merge steps, HTTP calls, file creation, backups, rc-file edits. Emitted through Python `logging` at DEBUG level on the `moat_install` logger (see §11 Logging); **all secrets must be masked** in debug output. |
+| `--version` | Print the version string (`moat-install <version>`) and exit 0. Resolved from the installed distribution metadata, falling back to `moat_install.__version__` when unavailable. |
 
 ### Key input rules
 

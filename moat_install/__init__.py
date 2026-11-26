@@ -7,4 +7,6 @@ harness's global user configuration under a chosen home-base directory that a
 container runner later mounts as the user's home.
 """
 
-__version__ = "0.1.0"
+# Fallback for contexts without installed distribution metadata (source
+# checkout, frozen binary); keep in sync with pyproject.toml.
+__version__ = "0.2.2"

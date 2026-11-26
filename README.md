@@ -141,7 +141,7 @@ provider is written and the rest are reported as manual-action notes.
 ```
 moat-install [--provider-specification=PATH] [--provider=NAME[,NAME…]]
              [--harness=NAME[,NAME…]] [--init-home-dir] [--home-base=PATH]
-             [--no-verify] [--dry-run] [--verbose] [--debug] [--help]
+             [--no-verify] [--dry-run] [--verbose] [--debug] [--version] [--help]
 ```
 
 | Flag | Meaning |
@@ -155,6 +155,7 @@ moat-install [--provider-specification=PATH] [--provider=NAME[,NAME…]]
 | `--dry-run` | Perform everything except writes; print the plan |
 | `--verbose` | Print the full summary table, warnings, and manual-action notes |
 | `--debug` | Verbose decision trace on stderr (all secrets masked) |
+| `--version` | Print the version string and exit |
 
 By default the run prints a brief summary: one line per harness with the
 providers configured for it and the overall status, plus the env-file and

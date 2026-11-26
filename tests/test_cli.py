@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -53,6 +54,17 @@ def test_unknown_provider_exits_1(keys_env) -> None:
 
 def test_unknown_harness_exits_1(keys_env, home_base) -> None:
     assert run(["--harness", "bogus", "--home-base", str(home_base), "--no-verify"]) == 1
+
+
+def test_version_flag_prints_and_exits_0(capsys) -> None:
+    """--version prints the version string and exits 0 (after the banner)."""
+    with pytest.raises(SystemExit) as excinfo:
+        run(["--version"])
+    assert excinfo.value.code == 0
+    out = capsys.readouterr().out
+    # Like --help, --version is handled by argparse after the startup banner.
+    assert "m o a t - i n s t a l l" in out
+    assert re.search(r"moat-install \d+\.\d+\.\d+", out)
 
 
 def test_missing_env_non_tty_exits_1(monkeypatch: pytest.MonkeyPatch, home_base) -> None:
