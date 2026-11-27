@@ -22,6 +22,14 @@ its bundled docs):
   auth check accepts a *present* ``apiKey`` with no ``$ENV`` references — an
   empty string resolves to ``""`` and never throws — while an absent ``apiKey``
   would leave the provider unconfigured ("No API key for …").
+* The startup model selection lives in ``<agent-dir>/settings.json``:
+  ``defaultProvider`` (a provider id from ``models.json``) and ``defaultModel``
+  (a model id). Verified against the installed pi distribution (bundled
+  ``docs/settings.md`` settings reference; ``dist/core/model-resolver.js``
+  ``findInitialModel()``): the startup model is pinned only when *both* keys
+  are set — otherwise pi falls back to "first available model with valid API
+  key". Both keys are therefore always written together, derived from the
+  first configured provider (``default_selection``) and its ``default_model``.
 
 Container-runtime key delivery: pi resolves ``$VAR``-style ``apiKey`` values
 from its own process environment, so the key must be exported before launch —
@@ -32,7 +40,11 @@ written to ``models.json``.
 
 Merge behaviour: only ``providers.<profile-name>`` entries listed in the
 selection are added/updated in place; all other top-level keys (settings-like
-``modelOverrides``, unrelated providers) are preserved.
+``modelOverrides``, unrelated providers) are preserved. In ``settings.json``
+only ``defaultProvider``/``defaultModel`` are managed — existing values are
+overridden (the specification order stays authoritative, consistent with the
+other harnesses whose defaults are rewritten on every run) and every other
+key is preserved.
 """
 
 from __future__ import annotations
@@ -74,6 +86,8 @@ class PiFamilyAdapter(_base.Adapter):
                 report,
                 parse_check=self._parse_check,
             )
+            if not report.error:
+                self._merge_settings(report)
         except Exception as exc:
             report.error = str(exc)
             report.status = "failed"
@@ -134,6 +148,30 @@ class PiFamilyAdapter(_base.Adapter):
         entry["models"] = merged
 
         report.provider_status[profile.name] = "updated" if existed else "created"
+
+    def _merge_settings(self, report: AdapterReport) -> None:
+        """Merge the default selection into ``<agent-dir>/settings.json``.
+
+        pi pins the startup model only when *both* ``defaultProvider`` and
+        ``defaultModel`` are set (verified against the installed pi
+        distribution: ``findInitialModel()`` in ``model-resolver.js``), so the
+        two keys are always written together, derived from the first
+        configured provider and its ``default_model``. Existing values are
+        overridden; every other key is preserved.
+        """
+        default = self.default_selection.profile
+        if not default.default_model:
+            report.warnings.append(
+                f"{self.label}: provider '{default.name}' has no default model; "
+                f"{self.agent_dir}/settings.json not written"
+            )
+            return
+        path = self.home_base / self.agent_dir / "settings.json"
+        self.dbg(f"settings path: {path}")
+        doc: Dict[str, Any] = self._load_json(path) if path.exists() else {}
+        doc["defaultProvider"] = default.name
+        doc["defaultModel"] = default.default_model
+        self._write_text(path, self._dump_json(doc), report, parse_check=self._parse_check)
 
     @staticmethod
     def _parse_check(raw_path: str) -> None:

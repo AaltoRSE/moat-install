@@ -25,9 +25,22 @@ def test_config_path_and_shape(home_base: Path, selections, registry: ProviderRe
     assert_no_secret_outside_env_file(home_base, KEY_GATEWAY)
 
 
+def test_default_selection_settings(home_base: Path, selections) -> None:
+    """Same structure as pi: the default selection goes to settings.json."""
+    report = OhMyPiAdapter(home_base, selections).run()
+    assert report.ok
+    path = home_base / ".omp/agent/settings.json"
+    assert path.exists()
+    doc = json.loads(path.read_text("utf-8"))
+    assert doc["defaultProvider"] == "llm-gateway"
+    assert doc["defaultModel"] == "example-org/model-a"
+
+
 def test_idempotent(home_base: Path, selections) -> None:
     OhMyPiAdapter(home_base, selections).run()
-    snapshot = (home_base / ".omp/agent/models.json").read_bytes()
+    models_snapshot = (home_base / ".omp/agent/models.json").read_bytes()
+    settings_snapshot = (home_base / ".omp/agent/settings.json").read_bytes()
     second = OhMyPiAdapter(home_base, selections).run()
     assert second.status == "no-change"
-    assert (home_base / ".omp/agent/models.json").read_bytes() == snapshot
+    assert (home_base / ".omp/agent/models.json").read_bytes() == models_snapshot
+    assert (home_base / ".omp/agent/settings.json").read_bytes() == settings_snapshot

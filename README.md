@@ -121,8 +121,8 @@ Ready-made examples are in [`examples/`](examples/) — start from
 
 | Harness | Config written under the base |
 |---|---|
-| `pi` | `.pi/agent/models.json` |
-| `oh-my-pi` | `.omp/agent/models.json` |
+| `pi` | `.pi/agent/models.json` + `.pi/agent/settings.json` (default provider/model) |
+| `oh-my-pi` | `.omp/agent/models.json` + `.omp/agent/settings.json` (default provider/model) |
 | `codex` | `.codex/config.toml` + derived `.codex/moat-models.json` |
 | `opencode` | `.config/opencode/opencode.json` |
 | `claude` | `.claude/settings.json` (`env` block) |

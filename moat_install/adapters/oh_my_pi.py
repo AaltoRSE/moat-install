@@ -9,6 +9,12 @@ it consumes a ``models.json`` with the same provider schema as pi (``baseUrl``,
 ``api``, ``apiKey`` with ``$ENV`` interpolation, ``headers``, ``models[]``).
 
 * Therefore: ``<home-base>/.omp/agent/models.json``.
+* The default provider/model selection goes to
+  ``<home-base>/.omp/agent/settings.json`` (``defaultProvider``/``defaultModel``) —
+  the same configuration structure as pi (user-confirmed). The bundled
+  ``src/config/model-resolver.ts`` ``findInitialModel()`` resolves the saved
+  default from settings exactly like pi, requiring both keys (step "3. Try
+  saved default from settings").
 
 Container-runtime key delivery: identical to pi — ``$ENV`` references in
 ``models.json`` are resolved from the process environment, provided by the
