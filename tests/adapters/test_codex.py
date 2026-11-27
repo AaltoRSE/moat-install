@@ -32,7 +32,23 @@ def test_fresh_home(home_base: Path, selections, registry) -> None:
     assert doc["approval_policy"] == "on-request"
     # catalog referenced by bare filename (path rule: no absolute host paths)
     assert doc["model_catalog_json"] == "moat-models.json"
+    # per-provider catalogs: the process-global default catalog holds only the
+    # default provider's models; other providers get their own file
     assert config_path.parent.joinpath("moat-models.json").exists()
+    assert config_path.parent.joinpath("moat-models-azure.json").exists()
+
+    # Profile-V2 overlays: codex -p <provider> switches provider + catalog
+    gw_overlay = tomlkit.loads(
+        config_path.parent.joinpath("llm-gateway.config.toml").read_text("utf-8")
+    )
+    assert gw_overlay["model"] == gateway.default_model
+    assert gw_overlay["model_provider"] == "llm-gateway"
+    assert gw_overlay["model_catalog_json"] == "moat-models.json"
+    assert gw_overlay["disable_response_storage"] is False
+    az_overlay = tomlkit.loads(config_path.parent.joinpath("azure.config.toml").read_text("utf-8"))
+    assert az_overlay["model_provider"] == "azure"
+    assert az_overlay["model_catalog_json"] == "moat-models-azure.json"
+    assert az_overlay["disable_response_storage"] is True
 
     gw = doc["model_providers"]["llm-gateway"]
     assert gw["base_url"] == gateway.base_url
@@ -47,20 +63,43 @@ def test_fresh_home(home_base: Path, selections, registry) -> None:
     assert_no_secret_outside_env_file(home_base, KEY_GATEWAY, KEY_AZURE)
 
 
-def test_catalog_is_derived_from_profiles(home_base: Path, selections, registry) -> None:
+def test_catalogs_are_scoped_per_provider(home_base: Path, selections, registry) -> None:
+    """The codex catalog is process-global and provider-agnostic (verified
+    against codex-cli 0.172.0): each catalog file must hold a single
+    provider's models, or the picker offers models the active provider does
+    not serve and requests are sent to the wrong provider."""
     CodexAdapter(home_base, selections).run()
-    catalog = json.loads((home_base / ".codex/moat-models.json").read_text("utf-8"))
-    by_slug = {m["slug"]: m for m in catalog["models"]}
-    assert set(by_slug) == {m.id for m in registry.get("llm-gateway").models} | {
+    codex_dir = home_base / ".codex"
+    default_catalog = json.loads((codex_dir / "moat-models.json").read_text("utf-8"))
+    azure_catalog = json.loads((codex_dir / "moat-models-azure.json").read_text("utf-8"))
+    assert {m["slug"] for m in default_catalog["models"]} == {
+        m.id for m in registry.get("llm-gateway").models
+    }
+    assert {m["slug"] for m in azure_catalog["models"]} == {
         m.id for m in registry.get("azure").models
     }
-    model_a = by_slug["example-org/model-a"]
-    assert model_a["provider"] == "llm-gateway"
+    # entries carry parsed ModelInfo fields only: provider/name/model are
+    # silently ignored by codex and must not be written
+    entry = default_catalog["models"][0]
+    assert "provider" not in entry
+    assert "name" not in entry
+    assert "model" not in entry
+    assert entry["shell_type"] == "unified_exec"
+    assert entry["visibility"] == "list"
+    assert entry["supported_in_api"] is True
+    assert entry["base_instructions"]
+    # required by the codex ModelInfo schema (no serde default)
+    assert entry["support_verbosity"] is False
+    assert entry["experimental_supported_tools"] == []
+    model_a = next(m for m in default_catalog["models"] if m["slug"] == "example-org/model-a")
     assert model_a["context_window"] == 1_048_576
     assert model_a["truncation_policy"] == {"mode": "tokens", "limit": 500_000}
-    assert model_a["supports_tools"] is True
-    gpt5 = by_slug["gpt-5-2025-08-07"]
-    assert gpt5["provider"] == "azure"
+    for dropped in (
+        "supports_tools",
+        "supports_parallel_tool_calls",
+        "supports_reasoning_summaries",
+    ):
+        assert dropped not in model_a
 
 
 def test_catalog_requires_truncation_policy_without_context_window(
@@ -87,6 +126,8 @@ def test_catalog_requires_truncation_policy_without_context_window(
     # context_window stays omitted when unknown (never a zero)
     assert "context_window" not in model
     assert model["truncation_policy"] == {"mode": "tokens", "limit": 500_000}
+    # single-provider run: the default provider still gets its overlay
+    assert (home_base / ".codex/llm-gateway.config.toml").exists()
 
 
 def test_merge_preserves_comments_and_unrelated_settings(
@@ -132,6 +173,35 @@ def test_azure_default_sets_disable_response_storage(
     assert doc["model_provider"] == "azure"
     assert doc["model"] == registry.get("azure").default_model
     assert doc["disable_response_storage"] is True
+    overlay = tomlkit.loads((home_base / ".codex/azure.config.toml").read_text("utf-8"))
+    assert overlay["model_provider"] == "azure"
+    assert overlay["disable_response_storage"] is True
+
+
+def test_codex_profile_name_override(home_base: Path, registry: ProviderRegistry) -> None:
+    """codex_profile in the specification names the -p overlay; it defaults
+    to the provider name."""
+    profile = replace(registry.get("azure"), codex_profile="apim")
+    report = CodexAdapter(home_base, [ProviderSelection(profile, KEY_AZURE)]).run()
+    assert report.ok
+    overlay = home_base / ".codex/apim.config.toml"
+    assert overlay.exists()
+    assert not (home_base / ".codex/azure.config.toml").exists()
+    doc = tomlkit.loads(overlay.read_text("utf-8"))
+    assert doc["model_provider"] == "azure"
+    # sole provider => it is the default => default catalog file
+    assert doc["model_catalog_json"] == "moat-models.json"
+
+
+def test_legacy_profile_conflict_warns(home_base: Path, selections) -> None:
+    """codex -p <name> refuses to start while config.toml has a legacy
+    profile selector of the same name (verified against the 0.172.0 loader)."""
+    config_path = home_base / ".codex/config.toml"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text('[profiles.azure]\nmodel = "legacy"\n', encoding="utf-8")
+    report = CodexAdapter(home_base, selections).run()
+    assert report.ok
+    assert any("[profiles.azure]" in w for w in report.warnings)
 
 
 def test_sandbox_mode_container_vs_host(home_base: Path, selections) -> None:
@@ -200,17 +270,30 @@ def test_daemon_auto_start_container_vs_host(home_base: Path, selections) -> Non
 
 def test_idempotent_second_run(home_base: Path, selections) -> None:
     CodexAdapter(home_base, selections).run()
-    snap_cfg = (home_base / ".codex/config.toml").read_bytes()
-    snap_cat = (home_base / ".codex/moat-models.json").read_bytes()
+    codex_dir = home_base / ".codex"
+    managed = [
+        "config.toml",
+        "moat-models.json",
+        "moat-models-azure.json",
+        "llm-gateway.config.toml",
+        "azure.config.toml",
+    ]
+    snapshots = {name: (codex_dir / name).read_bytes() for name in managed}
     second = CodexAdapter(home_base, selections).run()
     assert second.status == "no-change"
     assert not second.backups
-    assert (home_base / ".codex/config.toml").read_bytes() == snap_cfg
-    assert (home_base / ".codex/moat-models.json").read_bytes() == snap_cat
+    for name, data in snapshots.items():
+        assert (codex_dir / name).read_bytes() == data, name
 
 
 def test_dry_run(home_base: Path, selections) -> None:
     report = CodexAdapter(home_base, selections, dry_run=True).run()
     assert report.ok
-    assert not (home_base / ".codex/config.toml").exists()
-    assert not (home_base / ".codex/moat-models.json").exists()
+    for name in (
+        "config.toml",
+        "moat-models.json",
+        "moat-models-azure.json",
+        "llm-gateway.config.toml",
+        "azure.config.toml",
+    ):
+        assert not (home_base / ".codex" / name).exists()

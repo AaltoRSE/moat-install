@@ -1,0 +1,7 @@
+{
+  "$schema": "https://pi.dev/schemas/settings.schema.json",
+  "defaultProvider": "something-else",
+  "defaultModel": "other-model",
+  "defaultThinkingLevel": "high",
+  "hideThinkingBlock": true
+}

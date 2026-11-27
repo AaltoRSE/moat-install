@@ -142,6 +142,36 @@ def test_invalid_provider_name_rejected(tmp_path: Path) -> None:
         load_provider_specification(write_spec(tmp_path / "p.json", spec))
 
 
+def test_codex_profile_defaults_to_provider_name(tmp_path: Path) -> None:
+    registry = load_provider_specification(write_spec(tmp_path / "p.json"))
+    assert registry.get("llm-gateway").codex_profile == "llm-gateway"
+    assert registry.get("azure").codex_profile == "azure"
+
+
+def test_codex_profile_override(tmp_path: Path) -> None:
+    spec = copy.deepcopy(TEST_SPEC)
+    spec["providers"][0]["codex_profile"] = "gateway"
+    registry = load_provider_specification(write_spec(tmp_path / "p.json", spec))
+    assert registry.get("llm-gateway").codex_profile == "gateway"
+    # the other provider still derives its profile name from its own name
+    assert registry.get("azure").codex_profile == "azure"
+
+
+def test_invalid_codex_profile_rejected(tmp_path: Path) -> None:
+    spec = copy.deepcopy(TEST_SPEC)
+    spec["providers"][0]["codex_profile"] = "Not Valid!"
+    with pytest.raises(SpecificationError, match="codex_profile"):
+        load_provider_specification(write_spec(tmp_path / "p.json", spec))
+
+
+def test_duplicate_codex_profile_names_rejected(tmp_path: Path) -> None:
+    spec = copy.deepcopy(TEST_SPEC)
+    spec["providers"][0]["codex_profile"] = "same"
+    spec["providers"][1]["codex_profile"] = "same"
+    with pytest.raises(SpecificationError, match="codex_profile"):
+        load_provider_specification(write_spec(tmp_path / "p.json", spec))
+
+
 def test_duplicate_names_rejected(tmp_path: Path) -> None:
     spec = copy.deepcopy(TEST_SPEC)
     spec["providers"][1]["name"] = spec["providers"][0]["name"]

@@ -24,10 +24,15 @@ Specification file format (JSON)::
           ],
           "pi_api": "openai-completions",
           "opencode_npm": "@ai-sdk/openai-compatible",
-          "codex_disable_response_storage": false
+          "codex_disable_response_storage": false,
+          "codex_profile": "gateway"
         }
       ]
     }
+
+``codex_profile`` (optional) overrides the name under which the provider is
+selectable in codex via ``codex -p <name>``; it defaults to the provider
+``name`` and must be unique across the specification.
 
 A provider may omit ``models`` (and ``default_model``) to run in **discovery
 mode**: the model catalog is then fetched from ``GET {base_url}/models`` with
@@ -84,6 +89,7 @@ _PROVIDER_KEYS = frozenset(
         "pi_api",
         "opencode_npm",
         "codex_disable_response_storage",
+        "codex_profile",
     }
 )
 _MODEL_KEYS = frozenset({"id", "display_name", "context_window", "max_output_tokens"})
@@ -123,6 +129,8 @@ class ProviderProfile:
     * ``codex_disable_response_storage`` — top-level Codex setting implied when
       this provider is the harness default (for gateways that reject stored
       responses).
+    * ``codex_profile`` — name of the codex Profile-V2 overlay that selects
+      this provider (``codex -p <codex_profile>``); defaults to ``name``.
     """
 
     name: str
@@ -135,6 +143,7 @@ class ProviderProfile:
     pi_api: str = "openai-completions"
     opencode_npm: str = "@ai-sdk/openai-compatible"
     codex_disable_response_storage: bool = False
+    codex_profile: str = ""
     display_name: str = ""
 
     def __post_init__(self) -> None:
@@ -149,6 +158,8 @@ class ProviderProfile:
         if not self.display_name:
             # display_name is derived, stored via object.__setattr__ (frozen dataclass)
             object.__setattr__(self, "display_name", self.name)
+        if not self.codex_profile:
+            object.__setattr__(self, "codex_profile", self.name)
 
     def model(self, model_id: str) -> ModelInfo:
         """Return catalog metadata for ``model_id`` (raises KeyError if absent)."""
@@ -227,6 +238,15 @@ def load_provider_specification(path: Path) -> ProviderRegistry:
             )
         profiles[profile.name] = profile
         order.append(profile.name)
+    profile_names: Dict[str, str] = {}
+    for profile in profiles.values():
+        previous = profile_names.get(profile.codex_profile)
+        if previous is not None:
+            raise SpecificationError(
+                f"{path}: providers {previous!r} and {profile.name!r} share the same "
+                f"codex_profile {profile.codex_profile!r}; codex -p names must be unique"
+            )
+        profile_names[profile.codex_profile] = profile.name
     logger.debug("loaded %d provider(s) from %s: %s", len(order), path, ", ".join(order))
     return ProviderRegistry(profiles=profiles, order=tuple(order))
 
@@ -303,6 +323,15 @@ def _parse_provider(path: Path, index: int, raw: Any) -> ProviderProfile:
     if not isinstance(drs, bool):
         raise SpecificationError(f"{where}: 'codex_disable_response_storage' must be a boolean")
 
+    codex_profile = raw.get("codex_profile", "")
+    valid_profile = isinstance(codex_profile, str) and (
+        not codex_profile or _NAME_RE.fullmatch(codex_profile)
+    )
+    if not valid_profile:
+        raise SpecificationError(
+            f"{where}: 'codex_profile' must match {_NAME_RE.pattern!r} (got {codex_profile!r})"
+        )
+
     try:
         return ProviderProfile(
             name=name,
@@ -315,6 +344,7 @@ def _parse_provider(path: Path, index: int, raw: Any) -> ProviderProfile:
             pi_api=raw.get("pi_api", "openai-completions"),
             opencode_npm=raw.get("opencode_npm", "@ai-sdk/openai-compatible"),
             codex_disable_response_storage=drs,
+            codex_profile=codex_profile,
             display_name=raw.get("display_name", "") or name,
         )
     except ValueError as exc:

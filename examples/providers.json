@@ -23,7 +23,8 @@
       ],
       "pi_api": "openai-completions",
       "opencode_npm": "@ai-sdk/openai-compatible",
-      "codex_disable_response_storage": false
+      "codex_disable_response_storage": false,
+      "codex_profile": "gateway"
     },
     {
       "name": "azure",

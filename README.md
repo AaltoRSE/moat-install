@@ -70,7 +70,8 @@ Ready-made examples are in [`examples/`](examples/) — start from
       ],
       "pi_api": "openai-completions",
       "opencode_npm": "@ai-sdk/openai-compatible",
-      "codex_disable_response_storage": false
+      "codex_disable_response_storage": false,
+      "codex_profile": "my-gateway"
     }
   ]
 }
@@ -78,7 +79,9 @@ Ready-made examples are in [`examples/`](examples/) — start from
 
 - Required provider fields: `name`, `base_url`, `api_key_env`, `auth`
   (`bearer` or `header`); `auth_header` is required for `header` auth. The
-  remaining fields are optional.
+  remaining fields are optional; `codex_profile` overrides the name under
+  which the provider is selectable in codex via `codex -p <name>` (it
+  defaults to `name` and must be unique across the specification).
 - Validation is strict: unknown keys, missing fields, bad types, duplicate
   names, and a `default_model` missing from an explicit `models` list are
   usage errors that name the offending key.
@@ -123,7 +126,7 @@ Ready-made examples are in [`examples/`](examples/) — start from
 |---|---|
 | `pi` | `.pi/agent/models.json` + `.pi/agent/settings.json` (default provider/model) |
 | `oh-my-pi` | `.omp/agent/models.json` + `.omp/agent/settings.json` (default provider/model) |
-| `codex` | `.codex/config.toml` + derived `.codex/moat-models.json` |
+| `codex` | `.codex/config.toml` + per-provider catalogs (`.codex/moat-models.json` for the default, `.codex/moat-models-<name>.json` for the rest) + Profile-V2 overlays `.codex/<codex_profile>.config.toml` — switch with `codex -p <profile>` |
 | `opencode` | `.config/opencode/opencode.json` |
 | `claude` | `.claude/settings.json` (`env` block) |
 | `aider` | `.aider.conf.yml` |

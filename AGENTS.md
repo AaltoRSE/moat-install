@@ -211,7 +211,8 @@ Schema (all fields shown; optional ones noted):
       ],
       "pi_api": "openai-completions",
       "opencode_npm": "@ai-sdk/openai-compatible",
-      "codex_disable_response_storage": false
+      "codex_disable_response_storage": false,
+      "codex_profile": "gateway"
     }
   ]
 }
@@ -221,7 +222,9 @@ Schema (all fields shown; optional ones noted):
   (`bearer` or `header`). Optional: `display_name` (defaults to `name`),
   `auth_header` (required for `header` auth), `pi_api` (default
   `openai-completions`), `opencode_npm` (default `@ai-sdk/openai-compatible`),
-  `codex_disable_response_storage` (default `false`), `models` +
+  `codex_disable_response_storage` (default `false`), `codex_profile` (the
+  name under which the provider is selectable in codex via `codex -p <name>`;
+  defaults to `name`, must be unique across the specification), `models` +
   `default_model` (explicit catalog; both required together — omitting
   `models` switches the provider to discovery mode, see above; an explicit
   empty `models: []` is rejected as a likely typo).
@@ -355,7 +358,7 @@ literal-key mode):
 |---|---|---|---|
 | **pi** | `.pi/agent/models.json` + `.pi/agent/settings.json` | `providers.<id>` with `baseUrl`, `api`, `apiKey` (`$ENV` interpolation), optional `headers`, `models[]` (agent dir defaults to `~/.pi/agent` — note: *not* `agents`); `settings.json` gets `defaultProvider`/`defaultModel` from the default selection — pi pins the startup model only when both are set (verified against the installed distribution, `model-resolver.js`); existing values overridden, other keys preserved | env-ref |
 | **oh-my-pi** | `.omp/agent/models.json` + `.omp/agent/settings.json` | pi fork; identical schema (incl. `settings.json` default selection) at the omp agent dir | env-ref |
-| **codex** | `.codex/config.toml` + derived `.codex/moat-models.json` | `[model_providers.<id>]` (`wire_api = "responses"` for both profiles), `env_key`/`env_http_headers`; catalog JSON **derived at write time** from the profile models and referenced by bare filename; conservative `approval_policy = "on-request"` only on create; `sandbox_mode = "danger-full-access"` only on create in container mode (moat is the sandbox; never set in host mode, where a previously written value is removed with a warning); `[features] daemon_auto_start = false` only when absent in container mode (no daemon auto-start inside the container; never set, never removed in host mode); `disable_response_storage = true` when azure is the default and the key is absent | env-ref |
+| **codex** | `.codex/config.toml` + per-provider catalogs `.codex/moat-models.json` (default) / `.codex/moat-models-<name>.json` + Profile-V2 overlays `.codex/<codex_profile>.config.toml` | `[model_providers.<id>]` (`wire_api = "responses"` for both profiles), `env_key`/`env_http_headers`; catalog JSON **derived at write time** per provider and referenced by bare filename — the codex catalog is process-global and provider-agnostic (verified codex-cli 0.172.0 + git source: `ModelInfo` has no `provider` field, `ThreadModelCatalog` binds one catalog to the active provider), so the default catalog holds only the default provider's models, and each provider gets a profile overlay (`model`, `model_provider`, `model_catalog_json`, `disable_response_storage`) so `codex -p <codex_profile>` switches provider and catalog together; catalog entries require `base_instructions` (legacy deserializer rejects entries without it) and `truncation_policy`, and carry only parsed `ModelInfo` fields (`shell_type` canonical `"unified_exec"`); legacy `profile = "<name>"` / `[profiles.<name>]` selectors in config.toml make `codex -p` refuse to start — warned about; conservative `approval_policy = "on-request"` only on create; `sandbox_mode = "danger-full-access"` only on create in container mode (moat is the sandbox; never set in host mode, where a previously written value is removed with a warning); `[features] daemon_auto_start = false` only when absent in container mode (no daemon auto-start inside the container; never set, never removed in host mode); `disable_response_storage = true` when the default provider's specification sets it and the key is absent | env-ref |
 | **opencode** | `.config/opencode/opencode.json` | `provider` (singular) map; `npm` package per API flavour; `options.baseURL` + `apiKey` as `{env:VAR}` (azure: `apiKey: ""` + `options.headers`); per-model `limit` blocks; top-level `model` = `<provider>/<model>` | env-ref |
 | **claude** | `.claude/settings.json` | `env` block; settings env **overrides** process env, so a stale `ANTHROPIC_AUTH_TOKEN` is removed (with warning) when delivering the token via the env file; one active endpoint — only the default provider is written | env-ref (gateway) / **literal** (azure: `ANTHROPIC_CUSTOM_HEADERS`, file chmod 0600) |
 | **aider** | `.aider.conf.yml` | top-level `model: openai/<model-id>` + `openai-api-base` (openai-compatible flow); YAML merged with ruamel round-trip; single endpoint — default provider only | env-ref (`OPENAI_API_KEY` alias); azure default → warning (APIM header not expressible via env) |
